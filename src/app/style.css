@@ -1,0 +1,764 @@
+/* 美学是“仪器”：深色，细线，等宽数字。琥珀色是清醒日，青色是世界年。 */
+:root {
+  --bg: #080b10;
+  --panel: #0d1219;
+  --line: #1c2632;
+  --text: #c9d6e3;
+  --dim: #8fa3b8;
+  --bright: #eef4fa;
+  --self: #f2b660;
+  --ai: #7fd6e8;
+  --danger: #ef6f5e;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 -apple-system, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+#app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 12px calc(76px + env(safe-area-inset-bottom));
+}
+
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+dl,
+dd,
+blockquote {
+  margin: 0;
+}
+
+h2 {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--bright);
+}
+
+h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bright);
+}
+
+h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+/* ---------------------------------------------------------------- 常驻读数 */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -12px;
+  padding: 10px 12px 8px;
+  background: rgba(8, 11, 16, 0.94);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+}
+
+.fate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.fate label {
+  white-space: nowrap;
+}
+
+.fate output {
+  min-width: 2.2em;
+  text-align: right;
+  font-family: var(--mono);
+  color: var(--bright);
+}
+
+.readings {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.readings div {
+  min-width: 0;
+}
+
+.readings dt {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.readings dd {
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--bright);
+}
+
+.meter {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: #121a24;
+  border: 1px solid var(--line);
+}
+
+.meter b {
+  display: block;
+  height: 100%;
+  background: var(--dim);
+  transition: width 0.5s ease;
+}
+
+.meter.fate-bar b {
+  background: linear-gradient(90deg, #a34a3d, var(--danger));
+}
+
+.meter.thin {
+  height: 6px;
+}
+
+.meter .tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--bright);
+}
+
+.legend,
+.delta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 5px 0 0;
+  vertical-align: -1px;
+}
+
+.legend i.ai {
+  margin-left: 14px;
+}
+
+.legend i.self,
+.k.build {
+  background: var(--self);
+}
+
+.legend i.ai,
+.k.delegate {
+  background: var(--ai);
+}
+
+.delta {
+  padding: 6px 10px;
+  border-left: 2px solid var(--dim);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.delta b {
+  font-weight: 500;
+}
+
+.delta .self {
+  color: var(--self);
+}
+
+.delta .ai {
+  color: var(--ai);
+}
+
+.delta .fate-up {
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------- 内容 */
+
+main {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.card.pending {
+  border-color: var(--self);
+}
+
+.row {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.row.anomaly h4 {
+  color: var(--self);
+}
+
+.note,
+.caption {
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.hint {
+  padding: 10px 12px;
+  border: 1px dashed var(--self);
+  color: var(--bright);
+  font-size: 14px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  color: var(--dim);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  word-break: break-all;
+  color: var(--dim);
+}
+
+ul.plain,
+ol.log {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.out {
+  color: #5b6877;
+  text-decoration: line-through;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+}
+
+canvas.view {
+  height: 250px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+canvas.view.map {
+  height: 300px;
+}
+
+canvas.chart {
+  height: 150px;
+  border: 1px solid var(--line);
+}
+
+canvas.chart.square {
+  height: 250px;
+}
+
+canvas.scene {
+  height: 240px;
+  border: 1px solid var(--line);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.facts dt {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.facts dd {
+  font-family: var(--mono);
+  color: var(--bright);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips button {
+  min-height: 36px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.chips button.flag {
+  border-color: var(--self);
+  color: var(--self);
+}
+
+.chips button.on {
+  border-color: var(--bright);
+  color: var(--bright);
+  background: #121a24;
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-height: 48px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--dim);
+  border-radius: 3px;
+  text-align: left;
+  color: var(--bright);
+}
+
+.btn small {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.btn.self {
+  border-color: var(--self);
+  color: var(--self);
+}
+
+.btn.ai {
+  border-color: var(--ai);
+  color: var(--ai);
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn.big {
+  align-items: center;
+  min-height: 56px;
+  font-size: 17px;
+}
+
+.btn:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn:disabled {
+  border-style: dashed;
+  border-color: var(--line);
+  color: #66778a;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------- 底部标签 */
+
+.tabs {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(8, 11, 16, 0.97);
+  border-top: 1px solid var(--line);
+}
+
+.tabs button {
+  position: relative;
+  height: 56px;
+  background: none;
+  border: 0;
+  border-top: 2px solid transparent;
+  color: var(--dim);
+}
+
+.tabs button.on {
+  border-top-color: var(--bright);
+  color: var(--bright);
+}
+
+.dot {
+  position: absolute;
+  top: 12px;
+  right: calc(50% - 22px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--self);
+}
+
+/* ---------------------------------------------------------------- 科研与朝堂 */
+
+.pips {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.pips i {
+  width: 12px;
+  height: 6px;
+  border: 1px solid var(--dim);
+}
+
+.pips i.on {
+  background: var(--bright);
+  border-color: var(--bright);
+}
+
+.share {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.share output {
+  min-width: 3em;
+  font-family: var(--mono);
+  color: var(--bright);
+}
+
+input[type='range'] {
+  width: 100%;
+  height: 32px;
+  accent-color: var(--ai);
+}
+
+.game .share {
+  grid-template-columns: 3em 1fr;
+  padding: 4px 0;
+}
+
+.game input[type='range'] {
+  accent-color: var(--self);
+}
+
+.faction {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 2.4em;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.faction span small {
+  margin-left: 6px;
+}
+
+.faction output {
+  text-align: right;
+  font-family: var(--mono);
+  color: var(--bright);
+}
+
+blockquote {
+  padding: 8px 12px;
+  border-left: 2px solid var(--line);
+  font-size: 14px;
+}
+
+cite {
+  display: block;
+  font-style: normal;
+  font-size: 13px;
+  color: var(--bright);
+}
+
+cite small {
+  margin-left: 8px;
+}
+
+/* ---------------------------------------------------------------- 推理 */
+
+.facts-list li {
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+
+table.board {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.board th {
+  padding: 6px 4px;
+  font-weight: 500;
+  color: var(--dim);
+  text-align: center;
+}
+
+.board tbody th {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.board td {
+  padding: 3px;
+}
+
+.mark {
+  width: 100%;
+  min-height: 40px;
+  background: #101720;
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+
+.mark.support {
+  border-color: var(--ai);
+  color: var(--ai);
+}
+
+.mark.against {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.choices {
+  display: grid;
+  gap: 6px;
+}
+
+.choice {
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  text-align: left;
+}
+
+.choice b {
+  color: var(--bright);
+}
+
+.choice span {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.choice.on {
+  border-color: var(--bright);
+  background: #121a24;
+}
+
+/* ---------------------------------------------------------------- 记录与结局 */
+
+.album {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.shot {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 6px;
+  background: none;
+  border: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.shot canvas {
+  height: 92px;
+}
+
+.log li {
+  display: grid;
+  grid-template-columns: 5.6em 1fr;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.log time {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.ending {
+  padding: 28px 16px;
+  text-align: center;
+  border-color: var(--dim);
+}
+
+.ending.clear {
+  border-color: var(--ai);
+}
+
+.ending.undecided,
+.ending.failed,
+.ending.sleep {
+  border-color: var(--danger);
+}
+
+.k {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 5px;
+  color: #080b10;
+}
+
+.k.sleep {
+  background: #6f8296;
+}
+
+.k.rule {
+  background: var(--danger);
+}
+
+/* ---------------------------------------------------------------- 弹出层 */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(4, 6, 10, 0.9);
+}
+
+.sheet {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 540px;
+  max-height: 100%;
+  padding: 16px;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.game canvas {
+  height: 260px;
+  border: 1px solid var(--line);
+}
+
+.controls {
+  display: grid;
+  gap: 8px;
+}
+
+.status,
+.year {
+  min-height: 1.6em;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--bright);
+}
+
+.brief {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.naming {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.naming input {
+  height: 40px;
+  padding: 0 10px;
+  background: #101720;
+  border: 1px solid var(--line);
+  color: var(--bright);
+  font: inherit;
+}
+
+@media (min-width: 640px) {
+  canvas.view {
+    height: 320px;
+  }
+
+  canvas.view.map {
+    height: 380px;
+  }
+}

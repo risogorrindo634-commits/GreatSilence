@@ -61,6 +61,13 @@ describe('确定性', () => {
     expect(end).not.toBe(start);
   });
 
+  it('日志按年份排列', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const years = randomWalk(createGame(seed), seed * 17, 300).log.map((e) => e.year);
+      expect(years).toEqual([...years].sort((a, b) => a - b));
+    }
+  });
+
   it('不合法的操作被拒绝，原因与 can 一致', () => {
     const s = createGame(SEED);
     const bad: Action = { type: 'depart', to: 'home' };

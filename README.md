@@ -2,7 +2,7 @@
 
 你是未来文明里最后一位人类执政官。宇宙里本该到处是文明，却一片沉默。在同样的命运降临之前，带领一个由 AI 运转的文明弄清楚：它们都去哪了。
 
-目前处于预制作阶段，垂直切片的模拟内核已经开始实现。
+垂直切片的灰盒版本已经可玩：六个星系、三种真相、四类证据、三件需要签字的事。画面是程序绘制的占位，文书用模板，还没有接入模型。下一步是真人试玩。
 
 ## 文档
 
@@ -27,9 +27,13 @@
 
 ```
 npm install
-npm test          # 内核的自动测试
+npm run dev       # 在本地打开游戏
+npm test          # 自动测试
 npm run typecheck
 npm run sim       # 模拟对局：几种固定打法各打一遍三种真相，用来调数值
+npm run build     # 构建静态站点，输出到 dist/
 ```
 
-数值都在 `src/content/balance.ts`。
+- 数值都在 `src/content/balance.ts`。
+- 调试时可以在网址后加 `?seed=123` 指定种子，`?truth=dream`（或 `hunter`、`blackball`）指定真相，`?new` 丢掉存档重开。
+- 发布：`.github/workflows/pages.yml` 把站点发布到 GitHub Pages，需要手动触发，用法写在文件开头。

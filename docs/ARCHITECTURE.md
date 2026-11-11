@@ -17,12 +17,16 @@ content   数据：真相、星系、签字事项、数值
    |
 core      确定性的模拟：状态、操作、规则、结局
    |
-app       界面与绘制：星图、星系、风景、科研、朝堂、推理板   （未开始）
+app       界面与绘制：星图、星系、风景、科研、朝堂、推理板
    |
-ai        文书的措辞：模板，之后接入模型                     （未开始）
+ai        文书的措辞：模板，之后接入模型
 ```
 
 依赖只能自上而下。`core` 不得引用 `app` 和 `ai`。
+
+- `app` 也不引用 `ai`。它只定义一个文书接口（`app/scribe.ts`），`ai` 实现它，由入口 `main.ts` 注入。以后把模板换成模型，只改入口。
+- 完整的状态关在 `app/store.ts` 里，界面的其余部分只拿得到视图。文书的函数也只接收视图。
+- 这是一个纯静态站点，真相必然在浏览器的内存和存档里。这里防的是界面无意中泄密，不防玩家翻存档。
 
 ## 3. 内核的接口
 
@@ -69,7 +73,10 @@ publicView(state) -> PublicView         // 给界面用，不含真相
 src/
   content/   balance.ts  truths.ts  systems.ts  court.ts
   core/      types.ts  rng.ts  evidence.ts  game.ts
-tests/       core.test.ts  helpers.ts
+  app/       store.ts  app.ts  screens.ts  draw.ts  minigames.ts  scribe.ts  labels.ts  style.css
+  ai/        templates.ts
+  main.ts
+tests/       core.test.ts  templates.test.ts  helpers.ts
 scripts/     sim.ts
 docs/
 ```
@@ -78,5 +85,5 @@ docs/
 
 - TypeScript，严格模式。
 - Vitest 做测试。
-- 界面开始时加入 Vite，绘制用 Canvas，暂不引入框架。
+- 界面用 Vite 构建，绘制用 Canvas，暂不引入框架。每次状态变化整页重画。
 - 部署是纯静态站点。

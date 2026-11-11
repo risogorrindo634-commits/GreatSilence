@@ -383,6 +383,8 @@ function spendDays(d: Draft, days: number, present: boolean): void {
  */
 function passYears(d: Draft, years: number, kind: 'delegated' | 'sleep'): void {
   const compute = computePerYear(d);
+  const startYear = d.year;
+  const firstNew = d.log.length;
   d.energy += incomePerYear(d) * years;
   d.year += years;
 
@@ -394,7 +396,12 @@ function passYears(d: Draft, years: number, kind: 'delegated' | 'sleep'): void {
     d.authority -= years / B.authority.sleepYearsPerPoint;
   }
 
-  for (const line of LINE_IDS) addPoints(d, line, compute * years * d.research.allocation[line]);
+  for (const line of LINE_IDS) {
+    const rate = compute * d.research.allocation[line];
+    const had = d.research.points[line];
+    // 升级记在点数真正够了的那一年，而不是这段时间结束的那一年。
+    addPoints(d, line, rate * years, (threshold) => Math.min(d.year, startYear + Math.ceil((threshold - had) / rate)));
+  }
 
   for (const p of d.probes) {
     if (!p.reported && d.year >= p.reportYear) {
@@ -403,14 +410,20 @@ function passYears(d: Draft, years: number, kind: 'delegated' | 'sleep'): void {
       record(d, { t: 'probeReport' }, p.reportYear);
     }
   }
+
+  // 这段时间里发生的事按年份排好。
+  const fresh = d.log.splice(firstNew);
+  fresh.sort((a, b) => a.year - b.year);
+  d.log.push(...fresh);
 }
 
-function addPoints(d: Draft, line: LineId, points: number): void {
+function addPoints(d: Draft, line: LineId, points: number, when?: (threshold: number) => number): void {
   const before = level(d, line);
   d.research.points[line] += points;
   const after = level(d, line);
   for (let lv = before + 1; lv <= after; lv++) {
-    record(d, { t: 'level', line, level: lv });
+    const year = when ? when(B.research.thresholds[lv - 1] ?? 0) : d.year;
+    record(d, { t: 'level', line, level: lv }, year);
     if (line === 'longevity') d.wakeDays += B.research.longevityDays;
     if (line === 'cosmology') {
       if (lv === B.research.cosmology.markLocalAt) markAnomalies(d);
@@ -419,7 +432,7 @@ function addPoints(d: Draft, line: LineId, points: number): void {
         const pick = wrong[Math.floor(draw(d) * wrong.length)];
         if (pick) {
           d.eliminated = pick;
-          record(d, { t: 'eliminate', ruledOut: pick });
+          record(d, { t: 'eliminate', ruledOut: pick }, year);
         }
       }
     }
