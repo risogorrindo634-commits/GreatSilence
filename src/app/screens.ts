@@ -83,7 +83,7 @@ export function header(view: PublicView): string {
         <output>${num(view.fate)}</output>
       </div>
       <dl class="readings">
-        <div><dt>纪年</dt><dd>第 ${view.year} 年</dd></div>
+        <div><dt>纪年</dt><dd>${view.year} 年</dd></div>
         <div><dt>能源</dt><dd>${num(view.energy)}</dd></div>
         <div><dt>航速</dt><dd>${speedLabel(view.speed)}</dd></div>
         <div><dt>清醒日</dt><dd>${view.wakeDays}</dd></div>
