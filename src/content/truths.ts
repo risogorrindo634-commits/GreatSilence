@@ -94,7 +94,7 @@ export const TRUTHS: Record<TruthId, TruthDef> = {
         discInner: 0.2,
         source: 0.6,
         coarse: ['致密点源：检出 1 个。', '分辨率不足，未能成像。'],
-        fine: ['致密点源 1 个，比背景高 0.4 开，角径不可分辨。', '尘埃盘内缘 0.9 天文单位。'],
+        fine: ['致密点源 1 个，在尘埃盘之外，比背景高 0.4 开，角径不可分辨。', '尘埃盘内缘 0.9 天文单位。'],
       },
       ruins: {
         damage: 'none',

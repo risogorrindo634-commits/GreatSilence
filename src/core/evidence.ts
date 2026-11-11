@@ -77,7 +77,8 @@ export function infraredGrid(def: InfraredDef, seed: number): number[][] {
       let v = 0.06;
       if (r >= def.discInner && r <= outer) v += 0.5 - 0.2 * ((r - def.discInner) / (outer - def.discInner));
       if (def.source > 0) {
-        const d = Math.hypot(px - 0.09, py + 0.06);
+        // 点源在尘埃盘之外的暗处，这样在图上认得出来。
+        const d = Math.hypot(px - 0.8, py + 0.76);
         v += def.source * Math.exp(-(d * d) / (2 * 0.05 * 0.05));
       }
       row.push(round(Math.max(0, v + E.infraredNoise * random.gauss())));
