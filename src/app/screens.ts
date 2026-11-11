@@ -256,7 +256,7 @@ function augmentRow(ctx: Ctx): string {
   return `${done}
     <div class="row anomaly">
       <h4>可以接受一次改造</h4>
-      <p>录事：${what}此后清醒日加 ${days}。释钥庭会重新审议你是否仍算人类，你的权威减 ${authority}。</p>
+      <p>录事：${next?.text ?? ''}此后清醒日加 ${days}。释钥庭会重新审议你是否仍算人类，你的权威减 ${authority}。</p>
       <div class="pair">${act(ctx, '接受改造', { type: 'augment' }, { tone: 'self', gain: `清醒日 +${days} · 权威 −${authority}`, confirm: `${what}清醒日加 ${days}，权威减 ${authority}。这一步收不回。` })}</div>
     </div>`;
 }
