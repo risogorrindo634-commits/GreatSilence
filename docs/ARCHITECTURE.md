@@ -29,11 +29,13 @@ ai        文书的措辞：模板，之后接入模型                     （�
 ```ts
 createGame(seed, truth?) -> GameState
 can(state, action) -> string | null     // 不能做时返回原因
+cost(state, action) -> Cost             // 花多少清醒日、世界年和能源
 reduce(state, action) -> GameState      // 不修改传入的状态
 publicView(state) -> PublicView         // 给界面用，不含真相
 ```
 
-- 所有玩法都是一个操作：观景、勘察、采集、建阵列、弹弓、调谐、发射探测器、裁决、启航、调整科研、下结论。
+- 所有玩法都是一个操作：观景、命名、勘察、调查、调谐、采集、建阵列、弹弓、发射探测器、等待、裁决、调整科研、启航、标注推理板、下结论。
+- 亲自上手的小操作在界面里进行，界面把成绩算成 0 到 1 的技巧值写进操作，内核只做换算。所以重放照样成立。
 - 两种时间在内核里是两个函数：花清醒日，和让世界过去若干年。后者负责能源、科研、探测器抵达和命运的结算。
 - 命运是一个由状态算出来的值，不单独存储，所以不会和别的数值对不上。
 
@@ -66,8 +68,9 @@ publicView(state) -> PublicView         // 给界面用，不含真相
 ```
 src/
   content/   balance.ts  truths.ts  systems.ts  court.ts
-  core/      types.ts  rng.ts  game.ts
-tests/       core.test.ts
+  core/      types.ts  rng.ts  evidence.ts  game.ts
+tests/       core.test.ts  helpers.ts
+scripts/     sim.ts
 docs/
 ```
 

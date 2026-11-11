@@ -20,3 +20,16 @@
 
 - [方向重估](docs/DIRECTIONS.md)：为什么转向以"理解"为核心的游戏
 - [点子库](docs/IDEAS.md)：几轮头脑风暴的记录
+
+## 开发
+
+需要 Node 22 或更新的版本。
+
+```
+npm install
+npm test          # 内核的自动测试
+npm run typecheck
+npm run sim       # 模拟对局：几种固定打法各打一遍三种真相，用来调数值
+```
+
+数值都在 `src/content/balance.ts`。
