@@ -6,7 +6,7 @@ import { SYSTEMS, findBody } from '../content/systems';
 import type { SystemId } from '../content/systems';
 import type { ResponseId, TruthId } from '../content/truths';
 import type { Action, LineId, PublicView } from '../core/types';
-import { drawCruise, drawFateCurve, drawInfrared, drawMap, drawRuins, drawScene, drawSignal, drawSystem } from './draw';
+import { drawCruise, drawFateCurve, drawInfrared, drawMap, drawProbes, drawRuins, drawScene, drawSignal, drawSystem } from './draw';
 import type { Hit } from './draw';
 import { EVIDENCE_NAMES, escapeHtml, num } from './labels';
 import { playIgnition, playSlingshot, playTuning } from './minigames';
@@ -134,7 +134,8 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
     if (after.wakeDays !== before.wakeDays) parts.push(`<b class="self">清醒日 ${signed(after.wakeDays - before.wakeDays)}</b>`);
     if (Math.abs(after.energy - before.energy) >= 0.5) parts.push(`能源 ${signed(after.energy - before.energy)}`);
     if (Math.abs(after.authority - before.authority) >= 0.05) parts.push(`权威 ${signed(after.authority - before.authority, 1)}`);
-    if (after.fate - before.fate >= 0.05) parts.push(`<b class="fate-up">命运 ${signed(after.fate - before.fate, 1)}</b>`);
+    // 命运只报格数，不报数值。
+    if (after.fateLevel > before.fateLevel) parts.push(`<b class="fate-up">同样的命运近了 ${after.fateLevel - before.fateLevel} 格</b>`);
     const had = new Map(before.evidence.map((o) => [o.id, JSON.stringify(o.facts)]));
     for (const o of after.evidence) {
       if (!had.has(o.id)) parts.push(`取得证据：${EVIDENCE_NAMES[o.id]}`);
@@ -202,6 +203,7 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
         if (o?.kind === 'signal') drawSignal(canvas, o.series);
         else if (o?.kind === 'infrared' && o.grid) drawInfrared(canvas, o.grid);
         else if (o?.kind === 'ruins' && o.cells) drawRuins(canvas, o.cells);
+        else if (o?.kind === 'probe') drawProbes(canvas, o.reports);
       } else if (kind === 'thumb') {
         const found = findBody(canvas.dataset.id ?? '');
         if (found) drawScene(canvas, { kind: found.body.kind, star: SYSTEMS[found.system].star, seed: sceneSeed(found.body.id), caption: '' });

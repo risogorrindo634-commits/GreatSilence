@@ -35,6 +35,10 @@ export function createGame(seed: number, truth?: TruthId): GameState {
   // 无论是否指定真相都抽一次，这样同一个种子在不同真相下用的是同一串随机数。
   const roll = nextRandom(seedState(seed));
   const picked = truth ?? TRUTH_IDS[Math.floor(roll.value * TRUTH_IDS.length)] ?? 'dream';
+  // 猎手掐断探测器的距离每局不同，这样只有“两艘在同一处没了声音”才说明问题。
+  const radiusRoll = nextRandom(roll.state);
+  const [nearest, farthest] = B.probe.silenceRadius;
+  const silenceRadius = Math.round((nearest + (farthest - nearest) * radiusRoll.value) * 10) / 10;
 
   const bodies: Record<string, BodyState> = {};
   for (const id of BODY_IDS) {
@@ -42,10 +46,11 @@ export function createGame(seed: number, truth?: TruthId): GameState {
   }
 
   return {
-    version: 1,
+    version: 2,
     seed,
-    rng: roll.state,
+    rng: radiusRoll.state,
     truth: picked,
+    silenceRadius,
     year: 0,
     wakeDays: B.start.wakeDays,
     energy: B.start.energy,
@@ -56,13 +61,15 @@ export function createGame(seed: number, truth?: TruthId): GameState {
     slingshot: null,
     delegatedYears: 0,
     sleptYears: 0,
+    sleepStreak: 0,
     arrays: [],
-    beacons: 0,
+    beaconYears: [],
     probes: [],
     research: {
       allocation: { propulsion: 0.25, longevity: 0.25, harvest: 0.25, cosmology: 0.25 },
       points: { propulsion: 0, longevity: 0, harvest: 0, cosmology: 0 },
     },
+    augments: 0,
     rulings: {},
     pending: null,
     bodies,
@@ -118,12 +125,17 @@ export function computePerYear(state: GameState): number {
   return (B.research.baseCompute + B.research.computePerIncome * incomePerYear(state)) * researchRate(state);
 }
 
+/**
+ * 显眼度。一座设施不是一建成就被看见：光要走到，对方要反应。
+ * 它的显眼度从建成那一年起线性上涨，过了 exposureYears 才算满。
+ */
 export function conspicuity(state: GameState): number {
-  return (
-    state.arrays.length * B.fate.conspicuityPerArray +
-    state.beacons * B.fate.conspicuityPerBeacon +
-    state.probes.length * B.fate.conspicuityPerProbe
-  );
+  const seen = (since: number): number => Math.min(1, Math.max(0, (state.year - since) / B.fate.exposureYears));
+  let sum = 0;
+  for (const a of state.arrays) sum += B.fate.conspicuityPerArray * seen(a.year);
+  for (const year of state.beaconYears) sum += B.fate.conspicuityPerBeacon * seen(year);
+  for (const p of state.probes) sum += B.fate.conspicuityPerProbe * seen(p.launchedYear);
+  return sum;
 }
 
 /** 命运里各项各占多少点。 */
@@ -148,6 +160,16 @@ export function fate(state: GameState): number {
   return Math.min(B.fate.full, p.time + p.conspicuity + p.delegation + p.signed);
 }
 
+/** 进度条亮了几格。界面只看得到这个：精确数值的涨落会泄露真相。 */
+export function fateLevel(state: GameState): number {
+  return Math.min(B.fate.segments, Math.floor((fate(state) / B.fate.full) * B.fate.segments + 1e-9));
+}
+
+/** 延寿科研到了第四、五级之后，还有几次改造等着执政官点头。 */
+export function augmentsAvailable(state: GameState): number {
+  return Math.max(0, level(state, 'longevity') - B.research.longevityFreeLevels - state.augments);
+}
+
 /** 从当前位置去另一个星系要花什么。 */
 export function travel(state: GameState, to: SystemId): { distance: number; speed: number; years: number; energy: number } {
   const from = SYSTEMS[state.location];
@@ -162,16 +184,23 @@ export function travel(state: GameState, to: SystemId): { distance: number; spee
   };
 }
 
-/** 从当前位置发射的探测器多少年后有回音：飞过去，再等消息以光速传回来。 */
+function probeSpeed(state: GameState): number {
+  return Math.min(B.travel.maxSpeed, cruiseSpeed(state) * B.probe.speedFactor);
+}
+
+/** 探测器飞出 ly 光年、消息再以光速传回来，一共要多少年。 */
+function probeFlight(state: GameState, ly: number): number {
+  return Math.max(1, Math.round(ly / probeSpeed(state) + ly));
+}
+
+/** 从当前位置发射的探测器，一切顺利的话多少年后有回音。 */
 export function probeYears(state: GameState): number {
-  const dist = distance(SYSTEMS[state.location].pos, PROBE_TARGET.pos);
-  const speed = Math.min(B.travel.maxSpeed, cruiseSpeed(state) * B.probe.speedFactor);
-  return Math.max(1, Math.round(dist / speed + dist));
+  return probeFlight(state, distance(SYSTEMS[state.location].pos, PROBE_TARGET.pos));
 }
 
 /** 一处天体这一次采集能得到多少能源。 */
 function harvestYield(def: BodyDef, times: number): number {
-  return Math.max(1, Math.round(def.resource * B.harvest.repeatFactor ** times));
+  return Math.max(1, Math.round(def.resource * Math.max(B.harvest.floor, B.harvest.repeatFactor ** times)));
 }
 
 function aiTuneClarity(state: GameState): number {
@@ -315,6 +344,8 @@ function canSpecific(state: GameState, action: Action): string | null {
     }
     case 'probe':
       return null;
+    case 'augment':
+      return augmentsAvailable(state) > 0 ? null : '还没有可以接受的改造。';
     case 'wait': {
       const ok = Number.isInteger(action.years) && action.years >= 1 && action.years <= B.wait.maxYears;
       return ok ? null : `等待的年数要在 1 到 ${B.wait.maxYears} 之间。`;
@@ -374,6 +405,7 @@ function clamp(x: number, lo: number, hi: number): number {
 /** 第一种时间：花清醒日。亲自到场也让权威小幅上升。 */
 function spendDays(d: Draft, days: number, present: boolean): void {
   d.wakeDays -= days;
+  if (days > 0) d.sleepStreak = 0;
   if (present) d.authority += B.authority.perSelfAction;
 }
 
@@ -392,8 +424,12 @@ function passYears(d: Draft, years: number, kind: 'delegated' | 'sleep'): void {
     d.delegatedYears += years;
     d.authority -= years / B.authority.delegatedYearsPerPoint;
   } else {
+    // 睡得越久，文明越不需要你：连续冷眠超过一定年数之后，权威流失加快。
+    const A = B.authority;
+    const gentle = clamp(A.longSleepAfter - d.sleepStreak, 0, years);
+    d.authority -= gentle / A.sleepYearsPerPoint + (years - gentle) / A.longSleepYearsPerPoint;
+    d.sleepStreak += years;
     d.sleptYears += years;
-    d.authority -= years / B.authority.sleepYearsPerPoint;
   }
 
   for (const line of LINE_IDS) {
@@ -406,8 +442,8 @@ function passYears(d: Draft, years: number, kind: 'delegated' | 'sleep'): void {
   for (const p of d.probes) {
     if (!p.reported && d.year >= p.reportYear) {
       p.reported = true;
-      if (!d.evidence.probe) d.evidence.probe = { year: p.reportYear };
-      record(d, { t: 'probeReport' }, p.reportYear);
+      d.evidence.probe = { year: Math.max(d.evidence.probe?.year ?? 0, p.reportYear) };
+      record(d, { t: 'probeReport', lost: p.lostAt !== null }, p.reportYear);
     }
   }
 
@@ -424,7 +460,8 @@ function addPoints(d: Draft, line: LineId, points: number, when?: (threshold: nu
   for (let lv = before + 1; lv <= after; lv++) {
     const year = when ? when(B.research.thresholds[lv - 1] ?? 0) : d.year;
     record(d, { t: 'level', line, level: lv }, year);
-    if (line === 'longevity') d.wakeDays += B.research.longevityDays;
+    // 延寿的前几级自动生效；之后的每一级是一次改造，要等执政官点头（augment）。
+    if (line === 'longevity' && lv <= B.research.longevityFreeLevels) d.wakeDays += B.research.longevityDays;
     if (line === 'cosmology') {
       if (lv === B.research.cosmology.markLocalAt) markAnomalies(d);
       if (lv === B.research.cosmology.eliminateAt && !d.eliminated) {
@@ -452,6 +489,7 @@ function arrive(d: Draft, to: SystemId, years: number, speed: number): void {
   d.location = to;
   if (first) d.visited.push(to);
   d.slingshot = null;
+  d.authority += B.authority.perArrival;
   record(d, { t: 'arrive', system: to, from, years, speed, first });
 
   const sys = SYSTEMS[to];
@@ -586,7 +624,7 @@ export function reduce(state: GameState, action: Action): GameState {
         passYears(d, c.years, 'delegated');
         quality = B.build.ai;
       }
-      d.arrays.push({ system: d.location, quality });
+      d.arrays.push({ system: d.location, quality, year: d.year });
       record(d, { t: 'build', mode: action.mode, system: d.location, quality });
       break;
     }
@@ -598,9 +636,24 @@ export function reduce(state: GameState, action: Action): GameState {
       break;
     }
     case 'probe': {
-      const reportYear = d.year + probeYears(state);
-      d.probes.push({ from: d.location, launchedYear: d.year, reportYear, reported: false });
-      record(d, { t: 'probe', from: d.location, reportYear });
+      const dist = distance(SYSTEMS[d.location].pos, PROBE_TARGET.pos);
+      // 两个随机数无论用不用都抽，这样同一个种子在不同真相下用的是同一串。
+      const failed = draw(d) < B.probe.failureRate;
+      const where = Math.round(draw(d) * dist * 10) / 10;
+      let lostAt: number | null = null;
+      if (TRUTHS[d.truth].evidence.probe.silenced) lostAt = Math.min(d.silenceRadius, dist);
+      else if (failed) lostAt = where;
+      const etaYear = d.year + probeFlight(state, dist);
+      const reportYear = lostAt === null ? etaYear : d.year + probeFlight(state, dist - lostAt);
+      d.probes.push({ from: d.location, launchedYear: d.year, distance: dist, etaYear, reportYear, lostAt, reported: false });
+      record(d, { t: 'probe', from: d.location, etaYear });
+      break;
+    }
+    case 'augment': {
+      d.augments++;
+      d.wakeDays += B.research.longevityDays;
+      d.authority -= B.research.augmentAuthority;
+      record(d, { t: 'augment', step: d.augments });
       break;
     }
     case 'wait': {
@@ -614,7 +667,7 @@ export function reduce(state: GameState, action: Action): GameState {
       d.pending = null;
       record(d, { t: 'rule', item: action.item, decision: action.decision });
       if (action.decision === 'sign') {
-        d.beacons += item.sign.beacons ?? 0;
+        for (let i = 0; i < (item.sign.beacons ?? 0); i++) d.beaconYears.push(d.year);
         shiftSupport(d, item.sign.support);
         if (item.sign.researchPoints) for (const line of LINE_IDS) addPoints(d, line, item.sign.researchPoints);
       } else {
@@ -713,7 +766,8 @@ export function publicView(state: GameState): PublicView {
     wakeDays: state.wakeDays,
     energy: state.energy,
     authority: state.authority,
-    fate: round2(fate(state)),
+    fateLevel: fateLevel(state),
+    fateSegments: B.fate.segments,
     speed: cruiseSpeed(state),
     support: { ...state.support },
     location: state.location,
@@ -732,12 +786,18 @@ export function publicView(state: GameState): PublicView {
         share: state.research.allocation[id],
       };
     }),
+    augments: {
+      accepted: state.augments,
+      available: augmentsAvailable(state),
+      days: B.research.longevityDays,
+      authority: B.research.augmentAuthority,
+    },
     arrays: state.arrays.length,
-    beacons: state.beacons,
-    probes: state.probes.map((p) => ({ ...p })),
+    beacons: state.beaconYears.length,
+    probes: state.probes.map((p) => ({ from: p.from, launchedYear: p.launchedYear, etaYear: p.etaYear, reported: p.reported })),
     pending: state.pending,
     rulings: { ...state.rulings },
-    evidence: observe(state.truth, state.evidence),
+    evidence: observe(state.truth, state.evidence, state.probes),
     eliminated: state.eliminated,
     board: { ...state.board },
     album,
@@ -750,6 +810,7 @@ export function publicView(state: GameState): PublicView {
           conclusion: state.conclusion?.truth ?? null,
           response: state.conclusion?.response ?? null,
           fate: {
+            total: round2(fate(state)),
             time: round2(parts.time),
             conspicuity: round2(parts.conspicuity),
             delegation: round2(parts.delegation),

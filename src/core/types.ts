@@ -30,12 +30,21 @@ export interface ArrayState {
   system: SystemId;
   /** 点火的质量，0.7 到 1.5。 */
   quality: number;
+  /** 建成的年份。显眼度从这一年起慢慢涨上来。 */
+  year: number;
 }
 
 export interface ProbeState {
   from: SystemId;
   launchedYear: number;
+  /** 出发时到 K-41 的距离，光年。 */
+  distance: number;
+  /** 一切顺利的话，哪一年有回音。发射时玩家只知道这个。 */
+  etaYear: number;
+  /** 实际哪一年有消息：失联的会更早。 */
   reportYear: number;
+  /** 在离 K-41 多远处失联；null 表示顺利掠过。发射时就定了，回报之前不进视图。 */
+  lostAt: number | null;
   reported: boolean;
 }
 
@@ -58,6 +67,7 @@ export interface EvidenceState {
   pulsar?: TunedEvidence;
   infrared?: SurveyedEvidence;
   ruins?: SurveyedEvidence;
+  /** 至少有一艘探测器有了消息；year 是最近一次。具体内容在 probes 里。 */
   probe?: { year: number };
 }
 
@@ -74,8 +84,9 @@ export type LogEvent =
   | { t: 'harvest'; mode: Mode; body: string; energy: number }
   | { t: 'build'; mode: Mode; system: SystemId; quality: number }
   | { t: 'slingshot'; boost: number }
-  | { t: 'probe'; from: SystemId; reportYear: number }
-  | { t: 'probeReport' }
+  | { t: 'probe'; from: SystemId; etaYear: number }
+  | { t: 'probeReport'; lost: boolean }
+  | { t: 'augment'; step: number }
   | { t: 'wait'; years: number }
   | { t: 'court'; item: CourtId }
   | { t: 'rule'; item: CourtId; decision: 'sign' | 'veto' }
@@ -91,10 +102,12 @@ export type LogEntry = LogEvent & { year: number };
  * 真相在这里，界面拿不到这个对象，只拿得到 PublicView。
  */
 export interface GameState {
-  version: 1;
+  version: 2;
   seed: number;
   rng: number;
   truth: TruthId;
+  /** 猎手的局里探测器失联的距离。每局都抽，别的真相下用不上。 */
+  silenceRadius: number;
 
   /** 远征开始以来的世界年。 */
   year: number;
@@ -112,15 +125,20 @@ export interface GameState {
   delegatedYears: number;
   /** 在冷眠里度过的世界年：巡航和等待。 */
   sleptYears: number;
+  /** 连续冷眠了多少年。亲自做任何一件事就归零。 */
+  sleepStreak: number;
 
   arrays: ArrayState[];
-  beacons: number;
+  /** 每座信标建成的年份。 */
+  beaconYears: number[];
   probes: ProbeState[];
 
   research: {
     allocation: Record<LineId, number>;
     points: Record<LineId, number>;
   };
+  /** 已经接受了几次延寿改造。 */
+  augments: number;
 
   rulings: Partial<Record<CourtId, 'sign' | 'veto'>>;
   pending: CourtId | null;
@@ -153,6 +171,8 @@ export type Action =
   | { type: 'build'; mode: 'ai' }
   | { type: 'slingshot'; skill: number }
   | { type: 'probe' }
+  /** 接受一次延寿改造：延寿科研到第四、五级后才有。 */
+  | { type: 'augment' }
   | { type: 'wait'; years: number }
   | { type: 'rule'; item: CourtId; decision: 'sign' | 'veto' }
   | { type: 'research'; allocation: Record<LineId, number> }
@@ -208,11 +228,22 @@ export interface RuinsObservation {
   facts: string[];
 }
 
+/** 一艘有了消息的探测器。 */
+export interface ProbeReport {
+  from: SystemId;
+  launchedYear: number;
+  reportYear: number;
+  /** 出发时到 K-41 的距离，光年。 */
+  distance: number;
+  /** 在离 K-41 多远处停止回传；null 表示顺利掠过。 */
+  lostAt: number | null;
+}
+
 export interface ProbeObservation {
   id: 'probe';
   kind: 'probe';
   year: number;
-  status: 'arrived' | 'lost';
+  reports: ProbeReport[];
   facts: string[];
 }
 
@@ -268,8 +299,8 @@ export interface EndingView {
   truth: TruthId;
   conclusion: TruthId | null;
   response: ResponseId | null;
-  /** 命运里各项各占多少。 */
-  fate: { time: number; conspicuity: number; delegation: number; signed: number };
+  /** 命运的精确数值，以及各项各占多少。结局之前界面只看得到格数。 */
+  fate: { total: number; time: number; conspicuity: number; delegation: number; signed: number };
   weights: { time: number; conspicuity: number; delegation: number };
 }
 
@@ -279,7 +310,9 @@ export interface PublicView {
   wakeDays: number;
   energy: number;
   authority: number;
-  fate: number;
+  /** 命运的进度条亮了几格，一共几格。精确的数值不进视图：它的涨落会泄露真相。 */
+  fateLevel: number;
+  fateSegments: number;
   /** 当前的巡航速度，以光速为单位，不含弹弓。 */
   speed: number;
   support: Record<FactionId, number>;
@@ -293,10 +326,13 @@ export interface PublicView {
   incomePerYear: number;
   computePerYear: number;
   research: LineView[];
+  /** 延寿改造：已经接受了几次，现在还能接受几次，每次的得失。 */
+  augments: { accepted: number; available: number; days: number; authority: number };
 
   arrays: number;
   beacons: number;
-  probes: { from: SystemId; launchedYear: number; reportYear: number; reported: boolean }[];
+  /** etaYear 是一切顺利时有回音的年份；实际的消息可能更早。 */
+  probes: { from: SystemId; launchedYear: number; etaYear: number; reported: boolean }[];
 
   pending: CourtId | null;
   rulings: Partial<Record<CourtId, 'sign' | 'veto'>>;

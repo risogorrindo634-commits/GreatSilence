@@ -1,6 +1,7 @@
 /**
  * 各个画面的内容。这里只拼 HTML，不改状态；按钮上带着要执行的操作，由 app.ts 统一处理。
  */
+import { AUGMENTS } from '../content/augments';
 import { BALANCE as B } from '../content/balance';
 import { COURT, COURT_IDS, FACTIONS, FACTION_IDS } from '../content/court';
 import type { CourtDef } from '../content/court';
@@ -74,20 +75,20 @@ function meter(value: number, max: number, cls = '', mark?: number): string {
 // ---------------------------------------------------------------- 常驻读数与标签
 
 export function header(view: PublicView): string {
-  const here = view.systems.find((s) => s.current)!;
+  // 只有格子，没有数字：命运精确的涨落会直接说出真相。
+  const cells = Array.from({ length: view.fateSegments }, (_, i) => `<i class="${i < view.fateLevel ? 'on' : ''}"></i>`).join('');
   return `
     <header class="top">
       <div class="fate">
         <label>同样的命运</label>
-        ${meter(view.fate, 100, 'fate-bar')}
-        <output>${num(view.fate)}</output>
+        <div class="gauge" role="img" aria-label="同样的命运：${view.fateLevel} 格，共 ${view.fateSegments} 格">${cells}</div>
       </div>
       <dl class="readings">
         <div><dt>纪年</dt><dd>${view.year} 年</dd></div>
         <div><dt>能源</dt><dd>${num(view.energy)}</dd></div>
         <div><dt>航速</dt><dd>${speedLabel(view.speed)}</dd></div>
         <div><dt>清醒日</dt><dd>${view.wakeDays}</dd></div>
-        <div><dt>位置</dt><dd>${here.name}</dd></div>
+        <div><dt>权威</dt><dd>${num(view.authority)}</dd></div>
       </dl>
     </header>`;
 }
@@ -155,7 +156,7 @@ function bodyCard(ctx: Ctx, body: BodyView): string {
 
   const gain = body.resource === null ? '能源未知' : `+${body.resource} 能源`;
   rows.push(
-    `<div class="row"><h4>采集</h4><p>${body.resource === null ? '勘察之后才知道这里有多少。' : `这一次能得到 ${body.resource} 能源。每采一次，下一次减半。`}</p><div class="pair">${act(ctx, '亲自采集', { type: 'harvest', mode: 'self', body: body.id }, { tone: 'self', gain })}${act(ctx, '交给 AI', { type: 'harvest', mode: 'ai', body: body.id }, { tone: 'ai', gain })}</div></div>`,
+    `<div class="row"><h4>采集</h4><p>${body.resource === null ? '勘察之后才知道这里有多少。' : `这一次能得到 ${body.resource} 能源。每采一次，下一次减半，减到四分之一为止。`}</p><div class="pair">${act(ctx, '亲自采集', { type: 'harvest', mode: 'self', body: body.id }, { tone: 'self', gain })}${act(ctx, '交给 AI', { type: 'harvest', mode: 'ai', body: body.id }, { tone: 'ai', gain })}</div></div>`,
   );
 
   return `<section class="card"><h3>${title}</h3>${rows.join('')}</section>`;
@@ -165,7 +166,6 @@ export function systemScreen(ctx: Ctx): string {
   const view = ctx.store.view();
   const here = view.systems.find((s) => s.current)!;
   const body = view.bodies.find((b) => b.id === ctx.ui.body) ?? null;
-  const probeYears = ctx.store.can({ type: 'probe' }) === null ? '发射之后要等回音' : '';
 
   const systemActions = `
     <section class="card">
@@ -180,8 +180,9 @@ export function systemScreen(ctx: Ctx): string {
       </div>
       <div class="row">
         <h4>探测器 <small>派往 K-41，旧信号的来源</small></h4>
-        <div class="pair">${act(ctx, '发射探测器', { type: 'probe' }, { gain: probeYears })}</div>
-        ${view.probes.filter((p) => !p.reported).map((p) => `<p class="note">在途：预计第 ${p.reportYear} 年有回音。</p>`).join('')}
+        <p>它刹不住车，只能高速掠过。你能知道的是它到了没有；没到的话，是在哪里没了声音。</p>
+        <div class="pair">${act(ctx, '发射探测器', { type: 'probe' }, { gain: '之后要等回音' })}</div>
+        ${view.probes.filter((p) => !p.reported).map((p) => `<p class="note">在途：一切顺利的话，第 ${p.etaYear} 年有回音。</p>`).join('')}
       </div>
       <div class="row">
         <h4>冷眠等待 <small>世界照常运转，你不花清醒日</small></h4>
@@ -245,6 +246,21 @@ export function mapScreen(ctx: Ctx): string {
 
 // ---------------------------------------------------------------- 科研
 
+/** 延寿的第四、五级不自动生效：每一级是一次改造，要执政官自己点头。 */
+function augmentRow(ctx: Ctx): string {
+  const { accepted, available, days, authority } = ctx.store.view().augments;
+  const done = accepted > 0 ? `<p class="note">已接受 ${accepted} 次改造。</p>` : '';
+  if (available <= 0) return done;
+  const next = AUGMENTS[accepted];
+  const what = next ? `${next.name}：${next.text}` : '';
+  return `${done}
+    <div class="row anomaly">
+      <h4>可以接受一次改造</h4>
+      <p>录事：${what}此后清醒日加 ${days}。释钥庭会重新审议你是否仍算人类，你的权威减 ${authority}。</p>
+      <div class="pair">${act(ctx, '接受改造', { type: 'augment' }, { tone: 'self', gain: `清醒日 +${days} · 权威 −${authority}`, confirm: `${what}清醒日加 ${days}，权威减 ${authority}。这一步收不回。` })}</div>
+    </div>`;
+}
+
 export function researchScreen(ctx: Ctx): string {
   const view = ctx.store.view();
   const lines = view.research
@@ -257,6 +273,7 @@ export function researchScreen(ctx: Ctx): string {
           <h3>${LINE_NAMES[line.id]}<small class="pips">${pips}</small></h3>
           <p>${LINE_EFFECTS[line.id]}</p>
           ${progress}
+          ${line.id === 'longevity' ? augmentRow(ctx) : ''}
           <label class="share">算力份额 <output>${Math.round(line.share * 100)}%</output>
             <input type="range" min="0" max="100" step="5" value="${Math.round(line.share * 100)}" data-share="${line.id}" />
           </label>
@@ -335,12 +352,12 @@ export function courtScreen(ctx: Ctx): string {
 // ---------------------------------------------------------------- 推理
 
 function evidenceCard(o: Observation): string {
-  const quality =
-    o.kind === 'signal' ? `清晰度 ${o.clarity.toFixed(2)}` : o.kind === 'probe' ? (o.status === 'arrived' ? '已抵达' : '失联') : o.fine ? '细' : '粗';
+  const quality = o.kind === 'signal' ? `清晰度 ${o.clarity.toFixed(2)}` : o.kind === 'probe' ? `${o.reports.length} 艘有消息` : o.fine ? '细' : '粗';
   let figure = '';
   if (o.kind === 'signal') figure = `<canvas class="chart" data-draw="evidence" data-id="${o.id}"></canvas>`;
   else if (o.kind === 'infrared') figure = o.grid ? `<canvas class="chart square" data-draw="evidence" data-id="infrared"></canvas><p class="caption">K-41 周围的红外图。十字是恒星的位置，它的光已扣除。</p>` : '';
   else if (o.kind === 'ruins') figure = o.cells ? `<canvas class="chart square" data-draw="evidence" data-id="ruins"></canvas><p class="caption">损毁分布：越亮损毁越重，短线是断口的朝向。</p>` : '';
+  else figure = `<canvas class="chart" data-draw="evidence" data-id="probe"></canvas><p class="caption">每艘一行，右端是 K-41。圆圈是顺利掠过，叉号是它停止回传的位置。</p>`;
   return `
     <section class="card evidence">
       <h3>${EVIDENCE_NAMES[o.id]}<small>${EVIDENCE_SOURCES[o.id]} · 第 ${o.year} 年 · ${quality}</small></h3>
@@ -465,7 +482,7 @@ export function endingScreen(ctx: Ctx): string {
     ['signal', '旧信号', [truth.evidence.signal.detail]],
     ['infrared', '红外', truth.evidence.infrared.fine],
     ['ruins', '遗迹', truth.evidence.ruins.fine],
-    ['probe', '探测器', truth.evidence.probe.facts],
+    ['probe', '探测器', [truth.evidence.probe.reveal]],
   ];
   const evidence = table
     .map(([id, name, facts]) => `<li><b>${name}</b>${got.has(id) ? '' : '（你没有取得）'}：${facts.map(escapeHtml).join('')}</li>`)
@@ -479,7 +496,7 @@ export function endingScreen(ctx: Ctx): string {
     `回应 ${end.response ? RESPONSES[end.response].name : '无'}`,
     `结局 ${ENDING_NAMES[end.id]}`,
     `第 ${end.year} 年`,
-    `命运 ${num(view.fate)}`,
+    `命运 ${num(end.fate.total)}`,
     `权威 ${num(view.authority)}`,
     `清醒日 ${view.wakeDays}`,
     `操作 ${record.actions.length} 步`,
@@ -497,11 +514,11 @@ export function endingScreen(ctx: Ctx): string {
       <p>对的回应是“${RESPONSES[truth.response].name}”：${RESPONSES[truth.response].text}</p>
     </section>
     <section class="card">
-      <h3>命运是怎么涨起来的<small>结局时 ${num(view.fate)}</small></h3>
+      <h3>命运是怎么涨起来的<small>结局时 ${num(end.fate.total)}，满 100 即降临</small></h3>
       <p>进度条背后有三个驱动，不同的真相给它们不同的权重。</p>
       ${driverRows}
       <canvas class="chart" data-draw="fate"></canvas>
-      <p class="caption">加粗的线段是命运上涨的时候。<span class="k sleep">灰</span>冷眠 <span class="k delegate">青</span>交给 AI <span class="k build">黄</span>建设与探测器 <span class="k rule">红</span>签字</p>
+      <p class="caption"><span class="k sleep">灰</span>时间 <span class="k build">黄</span>显眼度 <span class="k delegate">青</span>放权度 <span class="k rule">红</span>签字的后果。一座设施建成后要过 ${B.fate.exposureYears} 年才完全暴露，所以显眼度那一层总是晚一步才长高。</p>
     </section>
     <section class="card"><h3>三件需要签字的事</h3><ul class="plain">${court}</ul></section>
     <section class="card"><h3>这种真相留下的证据</h3><ul class="plain">${evidence}</ul></section>

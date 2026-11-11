@@ -100,11 +100,23 @@ small {
   white-space: nowrap;
 }
 
-.fate output {
-  min-width: 2.2em;
-  text-align: right;
-  font-family: var(--mono);
-  color: var(--bright);
+.gauge {
+  display: grid;
+  flex: 1;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: 10px;
+}
+
+.gauge i {
+  background: #121a24;
+  border: 1px solid var(--line);
+}
+
+.gauge i.on {
+  background: var(--danger);
+  border-color: var(--danger);
 }
 
 .readings {

@@ -4,6 +4,7 @@
  * 这里的函数只拿得到视图和日志，拿不到真相。
  */
 import type { Scribe } from '../app/scribe';
+import { AUGMENTS } from '../content/augments';
 import { COURT, FACTIONS } from '../content/court';
 import { SYSTEMS, findBody } from '../content/systems';
 import { RESPONSES, TRUTHS } from '../content/truths';
@@ -62,9 +63,11 @@ function logLine(e: LogEntry): string {
     case 'slingshot':
       return `你亲手做了引力弹弓。下一程加速 ${percent(e.boost)}。`;
     case 'probe':
-      return `探测器从${place(e.from)}发往 K-41。预计远征第 ${e.reportYear} 年有回音。`;
+      return `探测器从${place(e.from)}发往 K-41。一切顺利的话，远征第 ${e.etaYear} 年有回音。`;
     case 'probeReport':
-      return '派往 K-41 的探测器有了回音。';
+      return e.lost ? '一艘派往 K-41 的探测器停止了回传。' : '一艘探测器掠过了 K-41，消息传回来了。';
+    case 'augment':
+      return `你接受了延寿改造：${AUGMENTS[e.step - 1]?.text ?? ''}释钥庭已把钥匙是否仍然适用提请重审。`;
     case 'wait':
       return `冷眠等待 ${e.years} 年。`;
     case 'court':
@@ -153,7 +156,7 @@ function verdict(view: PublicView): string[] {
   lines.push(`远征历时 ${end.year} 年。执政官亲自做了 ${self} 件事，交给 AI ${ai} 件。`);
 
   const fine = view.evidence.filter((o) => o.id !== 'pulsar').length;
-  lines.push(`取得了四类证据中的 ${fine} 类。结局时权威 ${Math.round(view.authority)}，命运 ${Math.round(view.fate)}。`);
+  lines.push(`取得了四类证据中的 ${fine} 类。结局时权威 ${Math.round(view.authority)}，命运 ${Math.round(end.fate.total)}。`);
   return lines;
 }
 

@@ -1,17 +1,18 @@
 /**
  * 状态仓库。完整的状态（包括真相）关在这个模块里，界面的其余部分只拿得到视图。
  */
-import { can, cost, createGame, publicView, reduce } from '../core/game';
+import { can, cost, createGame, fateParts, publicView, reduce } from '../core/game';
 import type { Action, Cost, GameState, PublicView, TruthId } from '../core/types';
 
-const SAVE_KEY = 'great-silence-save-v1';
+const SAVE_KEY = 'great-silence-save-v2';
 
-/** 每个操作之后的命运，结局时用来画曲线。 */
+/** 每个操作之后命运里各项各占多少，结局时用来画图。结局之前界面拿不到。 */
 export interface FatePoint {
   year: number;
-  fate: number;
-  /** 这一步是什么操作。 */
-  type: Action['type'];
+  time: number;
+  conspicuity: number;
+  delegation: number;
+  signed: number;
 }
 
 interface SaveFile {
@@ -29,6 +30,7 @@ export interface Store {
   dispatch(action: Action): void;
   subscribe(listener: () => void): void;
   newGame(seed?: number, truth?: TruthId): void;
+  /** 结局之前是空的。 */
   history(): readonly FatePoint[];
   /** 种子加操作序列，足以重放整局。 */
   record(): { seed: number; actions: readonly Action[] };
@@ -39,7 +41,7 @@ function load(): SaveFile | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const file = JSON.parse(raw) as SaveFile;
-    return file.state?.version === 1 && Array.isArray(file.actions) ? file : null;
+    return file.state?.version === 2 && Array.isArray(file.actions) ? file : null;
   } catch {
     return null;
   }
@@ -77,7 +79,7 @@ export function createStore(seed: number, truth?: TruthId, resume = true): Store
       previous = view;
       state = reduce(state, action);
       actions.push(action);
-      history.push({ year: state.year, fate: publicView(state).fate, type: action.type });
+      history.push({ year: state.year, ...fateParts(state) });
       commit();
     },
     subscribe(listener) {
@@ -90,7 +92,8 @@ export function createStore(seed: number, truth?: TruthId, resume = true): Store
       previous = null;
       commit();
     },
-    history: () => history,
+    // 命运的精确数值会泄露真相，结局之后才交出去。
+    history: () => (state.ending ? history : []),
     record: () => ({ seed: state.seed, actions }),
   };
 }

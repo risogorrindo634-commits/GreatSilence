@@ -5,8 +5,8 @@ import { templateScribe as scribe } from '../src/ai/templates';
 import { COURT_IDS } from '../src/content/court';
 import { TRUTHS } from '../src/content/truths';
 import { createGame, publicView, reduce } from '../src/core/game';
-import type { EndingId, GameState, LogEntry } from '../src/core/types';
-import { ALL_TRUTHS, carefulRoute, randomWalk } from './helpers';
+import type { LogEntry } from '../src/core/types';
+import { ALL_TRUTHS, carefulRoute, everyEnding, randomWalk } from './helpers';
 
 /** 收集各种打法留下的日志，尽量覆盖所有事件。 */
 function logs(): LogEntry[] {
@@ -27,6 +27,13 @@ describe('文书模板', () => {
       const line = scribe.logLine(entry);
       expect(line.length).toBeGreaterThan(3);
       expect(line).not.toMatch(/undefined|NaN|\[object/);
+    }
+  });
+
+  it('延寿改造写得出换掉了什么', () => {
+    for (const step of [1, 2]) {
+      const line = scribe.logLine({ t: 'augment', step, year: 500 });
+      expect(line).toMatch(/改造：.+。释钥庭/);
     }
   });
 
@@ -59,19 +66,15 @@ describe('文书模板', () => {
     expect(lines[lines.length - 1]).toMatch(/^录事：/);
   });
 
-  it('每个结局都有史官的定论；没有结局时什么都不写', () => {
+  it('每个结局都有史官的定论，各不相同；没有结局时什么都不写', () => {
     expect(scribe.verdict(publicView(createGame(1)))).toEqual([]);
-    const seen = new Map<EndingId, string>();
-    const collect = (s: GameState): void => {
-      if (!s.ending) return;
+    const first = everyEnding(1).map((s) => {
       const lines = scribe.verdict(publicView(s));
       expect(lines.length).toBeGreaterThanOrEqual(3);
-      seen.set(s.ending.id, lines[0]!);
-    };
-    for (const truth of ALL_TRUTHS) collect(carefulRoute(createGame(1, truth)));
-    for (let seed = 1; seed <= 200 && seen.size < 6; seed++) collect(randomWalk(createGame(seed), seed * 7, 500));
-    expect([...seen.keys()].sort()).toEqual(['clear', 'failed', 'lucky', 'powerless', 'sleep', 'undecided']);
-    expect(new Set(seen.values()).size).toBe(6);
+      for (const line of lines) expect(line).not.toMatch(/undefined|NaN/);
+      return lines[0]!;
+    });
+    expect(new Set(first).size).toBe(6);
   });
 });
 

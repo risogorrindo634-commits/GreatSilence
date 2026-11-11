@@ -10,7 +10,7 @@ export const LINE_NAMES: Record<LineId, string> = {
 
 export const LINE_EFFECTS: Record<LineId, string> = {
   propulsion: '提高航速。探测器也跟着变快。',
-  longevity: '每升一级，多 8 个清醒日。',
+  longevity: '每一级多 8 个清醒日。前三级自动生效；第四、五级是改造，要你点头，代价是权威。',
   harvest: '提高阵列的产出。',
   cosmology: '一级：进入星系就标出异常。二级：星图上标出哪里有异常。三级：AI 调谐更清楚。四级：亲自调查少花 3 天。五级：排除一种错误的解释。',
 };
@@ -36,7 +36,7 @@ export const EVIDENCE_SOURCES: Record<EvidenceId, string> = {
   signal: '来自 K-41，在无光收到',
   infrared: '在巨环的冰卫星上拍摄',
   ruins: '晨昏的眼球世界',
-  probe: '派往 K-41',
+  probe: '派往 K-41，高速掠过',
   pulsar: '在灯塔收到',
 };
 

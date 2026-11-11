@@ -4,7 +4,7 @@
 import type { BodyKind, StarKind } from '../content/systems';
 import { PROBE_TARGET } from '../content/systems';
 import { makeRandom } from '../core/rng';
-import type { PublicView, RuinsCell } from '../core/types';
+import type { ProbeReport, PublicView, RuinsCell } from '../core/types';
 import { STAR_COLORS } from './labels';
 import type { FatePoint } from './store';
 
@@ -606,32 +606,89 @@ export function drawRuins(canvas: HTMLCanvasElement, cells: readonly (readonly R
   });
 }
 
-// ---------------------------------------------------------------- 结局：命运的曲线
+/**
+ * 探测器的航迹。每艘一行，左端是出发的地方，右端是 K-41。
+ * 叉号是它停止回传的位置；走到头的是顺利掠过的。几艘画在同一把尺上，位置对不对得上一眼可见。
+ */
+export function drawProbes(canvas: HTMLCanvasElement, reports: readonly ProbeReport[]): void {
+  const { ctx, w, h } = setup(canvas);
+  const left = 14;
+  const right = w - 30;
+  const longest = Math.max(...reports.map((r) => r.distance), 1);
+  const X = (toTarget: number): number => right - ((right - left) * toTarget) / longest;
+  const top = 26;
+  const step = Math.min(26, (h - top - 26) / Math.max(reports.length, 1));
 
-const CURVE_COLORS: Record<string, string> = {
-  sleep: '#6f8296',
-  delegate: CYAN,
-  build: AMBER,
-  rule: RED,
-};
+  // 刻度：离 K-41 的距离。
+  ctx.strokeStyle = GRID;
+  ctx.fillStyle = TEXT;
+  ctx.textAlign = 'center';
+  const tick = longest > 40 ? 20 : longest > 16 ? 5 : 2;
+  for (let d = 0; d <= longest; d += tick) {
+    ctx.beginPath();
+    ctx.moveTo(X(d), top - 8);
+    ctx.lineTo(X(d), h - 22);
+    ctx.stroke();
+    ctx.fillText(String(d), X(d), h - 10);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText('离 K-41 的距离（光年）', left, 10);
 
-function curveClass(p: FatePoint, prev: FatePoint | undefined): string | null {
-  if (!prev || p.fate - prev.fate < 0.05) return null;
-  if (p.type === 'depart' || p.type === 'wait') return 'sleep';
-  if (p.type === 'rule') return 'rule';
-  if (p.type === 'build' || p.type === 'probe') return p.year > prev.year ? 'delegate' : 'build';
-  return 'delegate';
+  reports.forEach((r, i) => {
+    const y = top + step * (i + 0.5);
+    const end = r.lostAt ?? 0;
+    ctx.strokeStyle = r.lostAt === null ? CYAN : AMBER;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(X(r.distance), y);
+    ctx.lineTo(X(end), y);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    if (r.lostAt === null) {
+      ctx.beginPath();
+      ctx.arc(X(0), y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(X(end) - 4, y - 4);
+      ctx.lineTo(X(end) + 4, y + 4);
+      ctx.moveTo(X(end) + 4, y - 4);
+      ctx.lineTo(X(end) - 4, y + 4);
+      ctx.stroke();
+    }
+  });
+
+  // K-41。
+  ctx.strokeStyle = TEXT;
+  ctx.beginPath();
+  ctx.moveTo(X(0), top - 14);
+  ctx.lineTo(X(0) + 5, top - 9);
+  ctx.lineTo(X(0), top - 4);
+  ctx.lineTo(X(0) - 5, top - 9);
+  ctx.closePath();
+  ctx.stroke();
 }
 
+// ---------------------------------------------------------------- 结局：命运是怎么涨起来的
+
+const LAYERS: readonly { key: 'time' | 'conspicuity' | 'delegation' | 'signed'; color: string }[] = [
+  { key: 'time', color: '#6f8296' },
+  { key: 'conspicuity', color: AMBER },
+  { key: 'delegation', color: CYAN },
+  { key: 'signed', color: RED },
+];
+
+/** 四项叠在一起：哪一层在什么时候长高，一眼看得出来。 */
 export function drawFateCurve(canvas: HTMLCanvasElement, history: readonly FatePoint[]): void {
   const { ctx, w, h } = setup(canvas);
   const left = 30;
   const right = w - 8;
   const top = 10;
   const bottom = h - 22;
-  const lastYear = Math.max(1, history[history.length - 1]?.year ?? 1);
+  const points: FatePoint[] = [{ year: 0, time: 0, conspicuity: 0, delegation: 0, signed: 0 }, ...history];
+  const lastYear = Math.max(1, points[points.length - 1]?.year ?? 1);
   const X = (year: number): number => left + ((right - left) * year) / lastYear;
-  const Y = (fate: number): number => bottom - ((bottom - top) * fate) / 100;
+  const Y = (fate: number): number => bottom - ((bottom - top) * Math.min(100, fate)) / 100;
 
   ctx.strokeStyle = GRID;
   ctx.fillStyle = TEXT;
@@ -644,16 +701,21 @@ export function drawFateCurve(canvas: HTMLCanvasElement, history: readonly FateP
     ctx.fillText(String(level), left - 4, Y(level));
   }
 
-  let prev: FatePoint = { year: 0, fate: 0, type: 'wait' };
-  for (const p of history) {
-    const kind = curveClass(p, prev);
-    ctx.strokeStyle = kind ? (CURVE_COLORS[kind] ?? TEXT) : '#33404e';
-    ctx.lineWidth = kind ? 2.2 : 1;
+  const below = points.map(() => 0);
+  for (const layer of LAYERS) {
+    const above = points.map((p, i) => (below[i] ?? 0) + p[layer.key]);
+    ctx.fillStyle = layer.color;
+    ctx.globalAlpha = 0.85;
     ctx.beginPath();
-    ctx.moveTo(X(prev.year), Y(prev.fate));
-    ctx.lineTo(X(p.year), Y(p.fate));
-    ctx.stroke();
-    prev = p;
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(X(p.year), Y(above[i] ?? 0));
+      else ctx.lineTo(X(p.year), Y(above[i] ?? 0));
+    });
+    for (let i = points.length - 1; i >= 0; i--) ctx.lineTo(X(points[i]!.year), Y(below[i] ?? 0));
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    above.forEach((v, i) => (below[i] = v));
   }
 
   ctx.fillStyle = TEXT;

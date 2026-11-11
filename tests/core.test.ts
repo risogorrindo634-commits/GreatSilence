@@ -6,9 +6,9 @@ import { SYSTEMS } from '../src/content/systems';
 import { RESPONSE_IDS, TRUTHS } from '../src/content/truths';
 import type { TruthId } from '../src/content/truths';
 import { observe } from '../src/core/evidence';
-import { can, computePerYear, createGame, fate, judge, publicView, reduce, replay } from '../src/core/game';
-import type { Action, EndingId, EvidenceState, GameState } from '../src/core/types';
-import { ALL_TRUTHS, B, allKeys, carefulRoute, deepFreeze, goTo, play, randomWalk } from './helpers';
+import { augmentsAvailable, can, computePerYear, createGame, fate, judge, publicView, reduce, replay } from '../src/core/game';
+import type { Action, EndingId, EvidenceState, GameState, ProbeState } from '../src/core/types';
+import { ALL_TRUTHS, B, allKeys, carefulRoute, deepFreeze, everyEnding, goTo, play, randomWalk, rich } from './helpers';
 
 const SEED = 20261111;
 
@@ -83,13 +83,28 @@ describe('视图不泄密', () => {
     expect(views[2]).toEqual(views[0]);
   });
 
-  it('做完与真相无关的操作后，视图只在命运上不同', () => {
-    const views = ALL_TRUTHS.map((t) => publicView(play(createGame(SEED, t), ...OPENING)));
-    const fates = views.map((v) => v.fate);
-    expect(new Set(fates).size).toBe(3);
-    const rest = views.map((v) => ({ ...v, fate: 0 }));
+  it('做完与真相无关的操作后，视图只在命运的格数上不同', () => {
+    const states = ALL_TRUTHS.map((t) => play(createGame(SEED, t), ...OPENING));
+    expect(new Set(states.map((s) => fate(s))).size).toBe(3);
+    const rest = states.map((s) => ({ ...publicView(s), fateLevel: 0 }));
     expect(rest[1]).toEqual(rest[0]);
     expect(rest[2]).toEqual(rest[0]);
+  });
+
+  it('命运在视图里只有格数：建一座阵列、发一艘探测器的当下，三种真相的视图完全相同', () => {
+    const views = ALL_TRUTHS.map((t) => publicView(play(createGame(SEED, t), { type: 'build', mode: 'self', skill: 0.5 }, { type: 'probe' })));
+    expect(views[0]!.fateLevel).toBe(0);
+    expect(views[1]).toEqual(views[0]);
+    expect(views[2]).toEqual(views[0]);
+  });
+
+  it('在途的探测器：视图里只有预计的年份，看不出它会不会失联', () => {
+    for (const truth of ALL_TRUTHS) {
+      const s = play(createGame(SEED, truth), { type: 'probe' });
+      const seen = publicView(s).probes[0]!;
+      expect(Object.keys(seen).sort()).toEqual(['etaYear', 'from', 'launchedYear', 'reported']);
+      expect(seen.etaYear).toBe(play(createGame(SEED, 'dream'), { type: 'probe' }).probes[0]!.etaYear);
+    }
   });
 
   it('结局之前的视图里没有真相、种子和随机数状态', () => {
@@ -100,13 +115,13 @@ describe('视图不泄密', () => {
         const view = publicView(after);
         const keys = allKeys(view);
         expect(view.ending).toBeNull();
-        for (const forbidden of ['truth', 'seed', 'rng', 'weights', 'trap']) expect(keys.has(forbidden)).toBe(false);
+        for (const forbidden of ['truth', 'seed', 'rng', 'weights', 'trap', 'fate', 'silenceRadius']) expect(keys.has(forbidden)).toBe(false);
       });
     }
   });
 
   it('干扰项在视图里和真正的信号用同一个标记', () => {
-    let s = play(createGame(SEED), { type: 'depart', to: 'p12' }, { type: 'survey', mode: 'ai' });
+    let s = play(rich(createGame(SEED)), { type: 'depart', to: 'p12' }, { type: 'survey', mode: 'ai' });
     const anomalies = publicView(s).bodies.map((b) => b.anomaly);
     expect(anomalies).toContain('signal');
     expect(JSON.stringify(publicView(s).bodies)).not.toContain('pulsar');
@@ -128,20 +143,19 @@ describe('证据可区分', () => {
     signal: { clarity: 1, seed: 1, year: 0 },
     infrared: { fine: true, seed: 2, year: 0 },
     ruins: { fine: true, seed: 3, year: 0 },
-    probe: { year: 0 },
   };
   /** 去掉年份，只留下玩家读到的内容。 */
   const content = (truth: TruthId, evidence: EvidenceState): Record<string, string> =>
     Object.fromEntries(observe(truth, evidence).map((o) => [o.id, JSON.stringify(o)]));
 
-  it('任意两种真相之间，四类证据全部不同', () => {
+  it('任意两种真相之间，旧信号、红外、遗迹三类细的证据全部不同', () => {
     for (const a of ALL_TRUTHS) {
       for (const b of ALL_TRUTHS) {
         if (a >= b) continue;
         const ca = content(a, full);
         const cb = content(b, full);
         const differing = Object.keys(ca).filter((k) => ca[k] !== cb[k]);
-        expect(differing.sort()).toEqual(['infrared', 'probe', 'ruins', 'signal']);
+        expect(differing.sort()).toEqual(['infrared', 'ruins', 'signal']);
       }
     }
   });
@@ -248,10 +262,16 @@ describe('命运的驱动', () => {
     }
   });
 
-  it('显眼度：亲手建一座阵列，命运按显眼度权重上涨', () => {
+  it('显眼度延迟显现：建成的当下命运不变，过了暴露期才按权重算满', () => {
+    const E = B.fate.exposureYears;
     for (const truth of ALL_TRUTHS) {
-      const s = play(createGame(SEED, truth), { type: 'build', mode: 'self', skill: 0.5 });
-      expect(fate(s)).toBeCloseTo(TRUTHS[truth].weights.conspicuity * B.fate.conspicuityPerArray, 6);
+      const w = TRUTHS[truth].weights;
+      const built = play(createGame(SEED, truth), { type: 'build', mode: 'self', skill: 0.5 });
+      expect(fate(built)).toBe(0);
+      const half = play(built, { type: 'wait', years: E / 2 });
+      expect(fate(half)).toBeCloseTo(w.time * pct(E / 2, B.fate.timeFullYears) + (w.conspicuity * B.fate.conspicuityPerArray) / 2, 6);
+      const full = play(half, { type: 'wait', years: E / 2 }, { type: 'wait', years: 40 });
+      expect(fate(full)).toBeCloseTo(w.time * pct(E + 40, B.fate.timeFullYears) + w.conspicuity * B.fate.conspicuityPerArray, 6);
     }
   });
 
@@ -268,7 +288,7 @@ describe('命运的驱动', () => {
     const after = (truth: TruthId, ...actions: Action[]): number => fate(play(createGame(SEED, truth), ...actions));
     const most = (...actions: Action[]): TruthId => [...ALL_TRUTHS].sort((a, b) => after(b, ...actions) - after(a, ...actions))[0]!;
     expect(most({ type: 'wait', years: 100 })).toBe('blackball');
-    expect(most({ type: 'build', mode: 'self', skill: 0.5 }, { type: 'probe' })).toBe('hunter');
+    expect(most({ type: 'build', mode: 'self', skill: 0.5 }, { type: 'probe' }, { type: 'wait', years: 100 })).toBe('hunter');
     // 同样是过去 60 年：交给 AI 做事和冷眠等待，差别只在放权度。
     const delegated = (t: TruthId): number =>
       after(t, { type: 'harvest', mode: 'ai', body: 'home-1' }, { type: 'harvest', mode: 'ai', body: 'home-1' }, { type: 'harvest', mode: 'ai', body: 'home-1' }) -
@@ -291,8 +311,7 @@ describe('命运的驱动', () => {
 describe('朝堂', () => {
   /** 带着足够的能源第一次抵达某个星系，停在待决事项前。 */
   const arriveAt = (truth: TruthId, item: (typeof COURT_IDS)[number]): GameState => {
-    let s = play(createGame(SEED, truth), { type: 'build', mode: 'self', skill: 1 }, { type: 'wait', years: 200 });
-    s = reduce(s, { type: 'depart', to: COURT[item].system });
+    const s = reduce(rich(createGame(SEED, truth)), { type: 'depart', to: COURT[item].system });
     expect(s.pending).toBe(item);
     return s;
   };
@@ -311,13 +330,14 @@ describe('朝堂', () => {
   it('信标：签字和否决的效果与规格一致', () => {
     const s = arriveAt('dream', 'beacon');
     const signed = reduce(s, { type: 'rule', item: 'beacon', decision: 'sign' });
-    expect(signed.beacons).toBe(1);
+    expect(signed.beaconYears).toEqual([signed.year]);
+    expect(publicView(signed).beacons).toBe(1);
     expect(signed.energy).toBeCloseTo(s.energy - 60, 6);
     expect(signed.support.outward).toBe(s.support.outward + 15);
     expect(signed.authority).toBe(s.authority);
 
     const vetoed = reduce(s, { type: 'rule', item: 'beacon', decision: 'veto' });
-    expect(vetoed.beacons).toBe(0);
+    expect(vetoed.beaconYears).toEqual([]);
     expect(vetoed.support.outward).toBe(s.support.outward - 15);
     expect(vetoed.authority).toBeCloseTo(s.authority + 3, 6);
   });
@@ -340,9 +360,15 @@ describe('朝堂', () => {
 
   it('每一件事在恰好一种真相下是陷阱', () => {
     for (const item of COURT_IDS) {
+      // 信标的害处要过了暴露期才显现，所以裁决之后再等一百年来比。
       const harm = (truth: TruthId): number => {
         const s = arriveAt(truth, item);
-        return fate(reduce(s, { type: 'rule', item, decision: 'sign' })) - fate(reduce(s, { type: 'rule', item, decision: 'veto' }));
+        const later = (decision: 'sign' | 'veto'): number => {
+          const ruled = reduce(s, { type: 'rule', item, decision });
+          // 签下陷阱可能当场就让命运降临，那就不用再等了。
+          return fate(ruled.ending ? ruled : reduce(ruled, { type: 'wait', years: 100 }));
+        };
+        return later('sign') - later('veto');
       };
       const trapped = ALL_TRUTHS.filter((t) => harm(t) >= 20);
       expect(trapped).toEqual([COURT[item].trap.truth]);
@@ -377,14 +403,15 @@ describe('科研与航行', () => {
     const s = play(
       createGame(SEED),
       { type: 'research', allocation: { propulsion: 0, longevity: 1, harvest: 0, cosmology: 0 } },
-      { type: 'wait', years: 100 },
+      { type: 'wait', years: 200 },
     );
+    expect(publicView(s).research.find((l) => l.id === 'longevity')!.level).toBe(1);
     expect(s.wakeDays).toBe(B.start.wakeDays + B.research.longevityDays);
   });
 
   it('宇宙规律：一级标出本星系的异常，五级排除一种错误的解释', () => {
     const all: Action = { type: 'research', allocation: { propulsion: 0, longevity: 0, harvest: 0, cosmology: 1 } };
-    let s = play(createGame(SEED, 'hunter'), all, { type: 'wait', years: 100 }, { type: 'depart', to: 'm7' });
+    let s = play(rich(createGame(SEED, 'hunter')), all, { type: 'wait', years: 200 }, { type: 'depart', to: 'm7' });
     expect(publicView(s).bodies.find((b) => b.id === 'm7-1')!.anomaly).toBe('ruins');
     while (!s.eliminated && !s.ending) s = play(s, { type: 'wait', years: 100 });
     expect(s.eliminated).not.toBeNull();
@@ -401,13 +428,13 @@ describe('科研与航行', () => {
     expect(years(good)).toBeLessThan(years(s));
     expect(years(poor)).toBeGreaterThan(years(s));
 
-    const atPulsar = reduce(reduce(s, { type: 'depart', to: 'p12' }), { type: 'slingshot', skill: 1 });
+    const atPulsar = reduce(reduce(rich(s), { type: 'depart', to: 'p12' }), { type: 'slingshot', skill: 1 });
     expect(atPulsar.slingshot).toBeCloseTo(B.slingshot.max * 1.5, 6);
   });
 
   it('抵达脉冲星扣 3 个清醒日；无光没有恒星，不能建阵列', () => {
     // 路上不研究延寿，清醒日的变化就只来自辐射。
-    const s = play(createGame(SEED), { type: 'research', allocation: { propulsion: 1, longevity: 0, harvest: 0, cosmology: 0 } });
+    const s = play(rich(createGame(SEED)), { type: 'research', allocation: { propulsion: 1, longevity: 0, harvest: 0, cosmology: 0 } });
     expect(s.wakeDays - reduce(s, { type: 'depart', to: 'p12' }).wakeDays).toBe(3);
     const dark = reduce({ ...s, energy: 500 }, { type: 'depart', to: 'r3' });
     expect(can(dark, { type: 'build', mode: 'ai' })).toBe('这里没有恒星，不能建阵列。');
@@ -423,18 +450,121 @@ describe('科研与航行', () => {
     expect(worst.arrays[0]!.quality).toBe(B.build.skillMin);
   });
 
-  it('探测器在若干年后回报，三种真相的命运不同', () => {
+  it('延寿：前三级自动生效，第四、五级是改造，要执政官点头，代价是权威', () => {
+    let s = play(createGame(SEED, 'hunter'), { type: 'research', allocation: { propulsion: 0, longevity: 1, harvest: 0, cosmology: 0 } });
+    expect(can(s, { type: 'augment' })).toBe('还没有可以接受的改造。');
+    while (publicView(s).research.find((l) => l.id === 'longevity')!.level < 4) s = play(s, { type: 'wait', years: 100 });
+    // 第四级到了，但清醒日只加了前三级的。
+    expect(s.wakeDays).toBe(B.start.wakeDays + 3 * B.research.longevityDays);
+    expect(augmentsAvailable(s)).toBe(1);
+    expect(publicView(s).augments).toMatchObject({ accepted: 0, available: 1 });
+
+    const after = reduce(s, { type: 'augment' });
+    expect(after.wakeDays).toBe(s.wakeDays + B.research.longevityDays);
+    expect(after.authority).toBeCloseTo(s.authority - B.research.augmentAuthority, 6);
+    expect(can(after, { type: 'augment' })).toBe('还没有可以接受的改造。');
+  });
+});
+
+describe('探测器', () => {
+  /** 发射一艘，等到有消息为止。 */
+  const launchAndWait = (s: GameState): GameState => {
+    let next = reduce(s, { type: 'probe' });
+    const probe = next.probes[next.probes.length - 1]!;
+    while (next.year < probe.reportYear) next = reduce(next, { type: 'wait', years: Math.min(200, probe.reportYear - next.year) });
+    return next;
+  };
+  const energized = (seed: number, truth: TruthId): GameState => ({ ...createGame(seed, truth), energy: 1000 });
+
+  it('有消息之前不是证据；消息不会晚于预计的年份', () => {
     for (const truth of ALL_TRUTHS) {
-      let s = play(createGame(SEED, truth), { type: 'probe' });
+      const s = play(createGame(SEED, truth), { type: 'probe' });
+      const probe = s.probes[0]!;
       expect(s.evidence.probe).toBeUndefined();
-      const due = s.probes[0]!.reportYear;
-      s = play(s, { type: 'wait', years: 100 });
-      expect(s.evidence.probe).toBeUndefined();
-      while (s.year < due) s = play(s, { type: 'wait', years: 100 });
-      expect(s.evidence.probe).toEqual({ year: due });
-      const report = publicView(s).evidence.find((o) => o.id === 'probe')!;
-      expect(report.kind === 'probe' && report.status).toBe(TRUTHS[truth].evidence.probe.status);
+      expect(publicView(s).evidence).toEqual([]);
+      expect(probe.reportYear).toBeLessThanOrEqual(probe.etaYear);
+      const done = launchAndWait(createGame(SEED, truth));
+      expect(done.evidence.probe).toEqual({ year: probe.reportYear });
     }
+  });
+
+  it('猎手：每一艘都在离 K-41 同一个距离上没了声音，从哪里发射都一样', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      let s = energized(seed, 'hunter');
+      s = launchAndWait(launchAndWait(s));
+      s = launchAndWait(reduce(s, { type: 'depart', to: 'g2' }));
+      const lost = s.probes.map((p) => p.lostAt);
+      expect(lost).toEqual([s.silenceRadius, s.silenceRadius, s.silenceRadius]);
+      expect(s.silenceRadius).toBeGreaterThanOrEqual(B.probe.silenceRadius[0]);
+      expect(s.silenceRadius).toBeLessThanOrEqual(B.probe.silenceRadius[1]);
+    }
+    // 这个距离每局不同，所以单看一次失联的位置认不出猎手。
+    expect(new Set(Array.from({ length: 20 }, (_, i) => createGame(i + 1, 'hunter').silenceRadius)).size).toBeGreaterThan(10);
+  });
+
+  it('入梦和黑球：探测器分不开它们；约四分之一因故障失联，位置随机', () => {
+    let lost = 0;
+    const places = new Set<number>();
+    for (let seed = 1; seed <= 400; seed++) {
+      const dream = launchAndWait(createGame(seed, 'dream'));
+      const blackball = launchAndWait(createGame(seed, 'blackball'));
+      const seen = (s: GameState) => publicView(s).evidence.find((o) => o.id === 'probe');
+      expect(seen(blackball)).toEqual(seen(dream));
+      const at = dream.probes[0]!.lostAt;
+      if (at !== null) {
+        lost++;
+        places.add(at);
+      }
+    }
+    expect(lost / 400).toBeGreaterThan(B.probe.failureRate - 0.07);
+    expect(lost / 400).toBeLessThan(B.probe.failureRate + 0.07);
+    expect(places.size).toBeGreaterThan(50);
+  });
+
+  it('一次故障失联和猎手的掐断，写出来是同一种话', () => {
+    const facts = (s: GameState): string => {
+      const o = publicView(s).evidence.find((e) => e.id === 'probe')!;
+      return o.facts[0]!.replace(/[0-9.]+ 光年/, 'X 光年');
+    };
+    let failed: GameState | null = null;
+    for (let seed = 1; seed <= 60 && !failed; seed++) {
+      const s = launchAndWait(createGame(seed, 'dream'));
+      if (s.probes[0]!.lostAt !== null) failed = s;
+    }
+    expect(failed).not.toBeNull();
+    expect(facts(failed!)).toBe(facts(launchAndWait(createGame(failed!.seed, 'hunter'))));
+  });
+
+  it('多艘探测器的消息都留在同一条证据里', () => {
+    const s = launchAndWait(launchAndWait(energized(SEED, 'hunter')));
+    const o = publicView(s).evidence.find((e) => e.id === 'probe')!;
+    expect(o.kind === 'probe' && o.reports.map((r) => r.lostAt)).toEqual([s.silenceRadius, s.silenceRadius]);
+    const state: ProbeState[] = s.probes;
+    expect(state.every((p) => p.reported)).toBe(true);
+  });
+});
+
+describe('权威', () => {
+  it('每次抵达露面，权威小幅上升', () => {
+    const s = { ...createGame(SEED), energy: 1000 };
+    const t = publicView(s).systems.find((x) => x.id === 'g2')!.travel!;
+    const arrived = reduce(s, { type: 'depart', to: 'g2' });
+    expect(arrived.authority).toBeCloseTo(s.authority - t.years / B.authority.sleepYearsPerPoint + B.authority.perArrival, 2);
+  });
+
+  it('连续冷眠超过一定年数，权威流失加快；亲自做一件事就重新计数', () => {
+    const A = B.authority;
+    const start = createGame(SEED);
+    const nap: Action = { type: 'wait', years: 200 };
+    const straight = play(start, nap, nap, nap);
+    const gentle = A.longSleepAfter / A.sleepYearsPerPoint;
+    const fast = (600 - A.longSleepAfter) / A.longSleepYearsPerPoint;
+    expect(start.authority - straight.authority).toBeCloseTo(gentle + fast, 1);
+
+    // 中间醒来看一眼风景，就不算连续。
+    const broken = play(start, nap, { type: 'view', body: 'home-1' }, nap, { type: 'view', body: 'home-2' }, nap);
+    expect(start.authority - broken.authority).toBeCloseTo(600 / A.sleepYearsPerPoint, 1);
+    expect(broken.sleepStreak).toBe(200);
   });
 });
 
@@ -493,6 +623,10 @@ describe('结局表', () => {
     expect(s.wakeDays).toBe(0);
   });
 
+  it('六个结局都走得到', () => {
+    expect(everyEnding(SEED).map((s) => s.ending?.id)).toEqual(['clear', 'powerless', 'lucky', 'failed', 'undecided', 'sleep']);
+  });
+
   it('回应的对错：每种真相下恰好一种回应是对的，其余的有害或无害', () => {
     const table: Record<TruthId, Record<string, 'right' | 'harmless' | 'harmful'>> = {
       dream: { covenant: 'right', silence: 'harmful', ban: 'harmless' },
@@ -531,10 +665,12 @@ describe('不会卡死', () => {
   });
 
   it('能源见底时，靠采集总能攒够去最近一站的能源', () => {
-    let s: GameState = { ...goTo(createGame(SEED, 'hunter'), 'r3'), energy: 0 };
-    let guard = 0;
-    while (can(s, { type: 'depart', to: 'j14' }) && guard++ < 50) s = reduce(s, { type: 'harvest', mode: 'self', body: 'r3-1' });
+    // 无光只有一个天体，又不能建阵列，是最容易困住的地方。
+    let s: GameState = { ...createGame(SEED, 'hunter'), location: 'r3', visited: ['home', 'r3'], energy: 0 };
+    let harvests = 0;
+    while (can(s, { type: 'depart', to: 'j14' }) && harvests++ < 20) s = reduce(s, { type: 'harvest', mode: 'self', body: 'r3-1' });
     expect(can(s, { type: 'depart', to: 'j14' })).toBeNull();
+    expect(harvests).toBeLessThanOrEqual(12);
   });
 });
 

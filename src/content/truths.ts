@@ -47,8 +47,10 @@ export interface RuinsDef {
 }
 
 export interface ProbeDef {
-  status: 'arrived' | 'lost';
-  facts: readonly string[];
+  /** 探测器是否总在离目标同一个距离上被掐断。 */
+  silenced: boolean;
+  /** 结局揭晓时的一句话。 */
+  reveal: string;
 }
 
 export interface TruthDef {
@@ -105,10 +107,7 @@ export const TRUTHS: Record<TruthId, TruthDef> = {
           '呼叫七次，无应答。',
         ],
       },
-      probe: {
-        status: 'arrived',
-        facts: ['探测器抵达 K-41，入轨。', '设施完好，无活动。', '呼叫十二次，无应答。探测器未受任何干预。'],
-      },
+      probe: { silenced: false, reveal: '探测器掠过 K-41，没有人理会它。失联的那些只是故障。' },
     },
   },
 
@@ -142,10 +141,7 @@ export const TRUTHS: Record<TruthId, TruthDef> = {
         coarse: ['结构损毁。', '无活动，无应答。'],
         fine: ['轨道上只剩残骸。各段的断口朝着同一个方向。', '熔痕的深度处处相同。', '未发现内部爆炸的痕迹。'],
       },
-      probe: {
-        status: 'lost',
-        facts: ['探测器在距 K-41 两光年处停止回传。', '最后一帧遥测各项正常，没有故障前兆。'],
-      },
+      probe: { silenced: true, reveal: '每一艘探测器都在离 K-41 同一个距离上被掐断。' },
     },
   },
 
@@ -183,10 +179,7 @@ export const TRUTHS: Record<TruthId, TruthDef> = {
           '取回的最后一份实验日志，最后一行是：“能量再提高一档。”',
         ],
       },
-      probe: {
-        status: 'arrived',
-        facts: ['探测器抵达 K-41，入轨。', '内侧行星带已经烧净。', '损毁的中心是一座大型实验设施的遗址。'],
-      },
+      probe: { silenced: false, reveal: '探测器掠过 K-41，那里已经没有人了。失联的那些只是故障。' },
     },
   },
 };
@@ -206,6 +199,16 @@ export const RESPONSES: Record<ResponseId, ResponseDef> = {
 
 /** 所有真相共有的旧信号事实。 */
 export const SIGNAL_FACTS: readonly string[] = ['来源：K-41 方向。', '记录跨度四百年，此后无信号。'];
+
+/**
+ * 探测器是高速掠过：它刹不住车，几小时就穿过整个星系，带不回可用的影像。
+ * 所以它的证据只有一条：它到了没有；没到的话，是在哪里没了声音。{x} 会换成距离。
+ */
+export const PROBE_FACTS = {
+  rate: '录事：按工程估计，这样的航程上每四艘探测器约有一艘因故障失联。',
+  arrived: '掠过 K-41。呼叫无应答。探测器未受任何干预。相对速度太高，没有可用的影像。',
+  lost: '在距 K-41 {x} 光年处停止回传。此前的遥测一切正常。',
+};
 
 /** 干扰项：脉冲星。清晰度不够时只有前一组。 */
 export const PULSAR_FACTS = {

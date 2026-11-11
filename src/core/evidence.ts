@@ -3,10 +3,10 @@
  * 只产出数据和可核查的事实，不产出解释。同样的输入永远得到同样的输出。
  */
 import { BALANCE } from '../content/balance';
-import { PULSAR_FACTS, SIGNAL_FACTS, TRUTHS } from '../content/truths';
+import { PROBE_FACTS, PULSAR_FACTS, SIGNAL_FACTS, TRUTHS } from '../content/truths';
 import type { InfraredDef, RuinsDef, SignalDef, TruthId } from '../content/truths';
 import { makeRandom } from './rng';
-import type { EvidenceState, Observation, RuinsCell } from './types';
+import type { EvidenceState, Observation, ProbeReport, ProbeState, RuinsCell } from './types';
 
 const E = BALANCE.evidence;
 
@@ -121,8 +121,16 @@ export function ruinsCells(def: RuinsDef, seed: number): RuinsCell[][] {
   return cells;
 }
 
+/** 已经有了消息的探测器。没有消息的不在其中，它们的结局还不能让玩家知道。 */
+export function probeReports(probes: readonly ProbeState[]): ProbeReport[] {
+  return probes
+    .filter((p) => p.reported)
+    .map((p) => ({ from: p.from, launchedYear: p.launchedYear, reportYear: p.reportYear, distance: p.distance, lostAt: p.lostAt }))
+    .sort((a, b) => a.reportYear - b.reportYear);
+}
+
 /** 把已经取得的证据变成给玩家看的观测。 */
-export function observe(truth: TruthId, evidence: EvidenceState): Observation[] {
+export function observe(truth: TruthId, evidence: EvidenceState, probes: readonly ProbeState[] = []): Observation[] {
   const def = TRUTHS[truth].evidence;
   const out: Observation[] = [];
 
@@ -179,14 +187,14 @@ export function observe(truth: TruthId, evidence: EvidenceState): Observation[] 
     });
   }
 
-  if (evidence.probe) {
-    out.push({
-      id: 'probe',
-      kind: 'probe',
-      year: evidence.probe.year,
-      status: def.probe.status,
-      facts: [...def.probe.facts],
+  const reports = probeReports(probes);
+  if (evidence.probe && reports.length > 0) {
+    // 探测器只回答“到了没有，在哪里没了声音”。同样的结果在三种真相下写法完全一样。
+    const facts = reports.map((r, i) => {
+      const what = r.lostAt === null ? PROBE_FACTS.arrived : PROBE_FACTS.lost.replace('{x}', r.lostAt.toFixed(1));
+      return `第 ${i + 1} 艘（第 ${r.launchedYear} 年发射）：${what}`;
     });
+    out.push({ id: 'probe', kind: 'probe', year: evidence.probe.year, reports, facts: [...facts, PROBE_FACTS.rate] });
   }
 
   return out;

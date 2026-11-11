@@ -73,7 +73,7 @@ export const SYSTEMS: Record<SystemId, SystemDef> = {
     name: '双日',
     star: 'binary',
     starLabel: '双星',
-    pos: [14, 5],
+    pos: [20, 7],
     arrayOutput: 2,
     slingshot: 1,
     arrivalDays: 0,
@@ -107,7 +107,7 @@ export const SYSTEMS: Record<SystemId, SystemDef> = {
     name: '晨昏',
     star: 'red',
     starLabel: '红矮星',
-    pos: [26, -9],
+    pos: [36, -13],
     arrayOutput: 0.6,
     slingshot: 1,
     arrivalDays: 0,
@@ -134,7 +134,7 @@ export const SYSTEMS: Record<SystemId, SystemDef> = {
     name: '灯塔',
     star: 'pulsar',
     starLabel: '脉冲星',
-    pos: [36, 9],
+    pos: [50, 13],
     arrayOutput: 0.8,
     slingshot: 1.5,
     arrivalDays: 3,
@@ -159,7 +159,7 @@ export const SYSTEMS: Record<SystemId, SystemDef> = {
     name: '无光',
     star: 'none',
     starLabel: '没有恒星',
-    pos: [50, -5],
+    pos: [70, -7],
     arrayOutput: 0,
     slingshot: 1,
     arrivalDays: 0,
@@ -183,7 +183,7 @@ export const SYSTEMS: Record<SystemId, SystemDef> = {
     name: '巨环',
     star: 'orange',
     starLabel: '橙矮星',
-    pos: [62, 12],
+    pos: [87, 17],
     arrayOutput: 0.8,
     slingshot: 1,
     arrivalDays: 0,
@@ -215,7 +215,7 @@ export const SYSTEM_IDS: readonly SystemId[] = ['home', 'g2', 'm7', 'p12', 'r3',
 export const START_SYSTEM: SystemId = 'home';
 
 /** 旧信号的来源。只能派探测器去。离无光最近。 */
-export const PROBE_TARGET = { code: 'K-41', pos: [56, -14] as readonly [number, number] };
+export const PROBE_TARGET = { code: 'K-41', pos: [78, -20] as readonly [number, number] };
 
 const BODY_INDEX = new Map<string, { body: BodyDef; system: SystemId }>();
 for (const id of SYSTEM_IDS) {

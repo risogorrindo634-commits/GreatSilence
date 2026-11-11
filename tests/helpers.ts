@@ -4,9 +4,42 @@ import { SYSTEMS, SYSTEM_IDS } from '../src/content/systems';
 import type { SystemId } from '../src/content/systems';
 import { RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../src/content/truths';
 import type { TruthId } from '../src/content/truths';
-import { can, reduce } from '../src/core/game';
+import { can, createGame, reduce } from '../src/core/game';
 import { nextRandom, seedState } from '../src/core/rng';
 import type { Action, GameState } from '../src/core/types';
+
+/** 给足能源，用在与能源无关的测试里，免得被跃迁的花费挡住。 */
+export function rich(state: GameState): GameState {
+  return { ...state, energy: 1000 };
+}
+
+/** 六个结局各造一个出来。 */
+export function everyEnding(seed: number): GameState[] {
+  const conclude = (s: GameState, conclusion: TruthId, response: (typeof RESPONSE_IDS)[number]): GameState =>
+    reduce(s, { type: 'conclude', conclusion, response });
+  const delegate: Action = { type: 'harvest', mode: 'ai', body: 'home-3' };
+
+  let powerless = createGame(seed, 'hunter');
+  while (powerless.authority >= B.authority.threshold) powerless = reduce(powerless, delegate);
+
+  let undecided = createGame(seed, 'dream');
+  while (!undecided.ending) undecided = reduce(undecided, delegate);
+
+  let sleep = createGame(seed, 'dream');
+  while (!sleep.ending) {
+    const body = SYSTEMS.home.bodies.find((b) => can(sleep, { type: 'harvest', mode: 'self', body: b.id }) === null);
+    sleep = body ? reduce(sleep, { type: 'harvest', mode: 'self', body: body.id }) : reduce({ ...sleep, wakeDays: 2 }, { type: 'view', body: 'home-1' });
+  }
+
+  return [
+    conclude(createGame(seed, 'hunter'), 'hunter', 'silence'),
+    conclude(powerless, 'hunter', 'silence'),
+    conclude(createGame(seed, 'hunter'), 'blackball', 'ban'),
+    conclude(createGame(seed, 'hunter'), 'dream', 'covenant'),
+    undecided,
+    sleep,
+  ];
+}
 
 /** 依次执行一串操作。 */
 export function play(state: GameState, ...actions: Action[]): GameState {
@@ -90,6 +123,7 @@ export function candidates(state: GameState): Action[] {
   out.push({ type: 'build', mode: 'ai' });
   out.push({ type: 'slingshot', skill: 0.5 });
   out.push({ type: 'probe' });
+  out.push({ type: 'augment' });
   out.push({ type: 'wait', years: 25 });
   out.push({ type: 'research', allocation: { propulsion: 2, longevity: 1, harvest: 1, cosmology: 3 } });
   for (const to of SYSTEM_IDS) out.push({ type: 'depart', to });
