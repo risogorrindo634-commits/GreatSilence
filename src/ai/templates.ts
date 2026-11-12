@@ -6,6 +6,7 @@
 import type { Scribe } from '../app/scribe';
 import { AUGMENTS } from '../content/augments';
 import { COURT, FACTIONS } from '../content/court';
+import { LEADS } from '../content/leads';
 import { SYSTEMS, findBody } from '../content/systems';
 import { RESPONSES, TRUTHS } from '../content/truths';
 import type { CourtId, EndingId, EvidenceId, LineId, LogEntry, PublicView } from '../core/types';
@@ -21,9 +22,10 @@ const ENDINGS: Record<EndingId, string> = {
   sleep: '长眠',
 };
 
+/** 地名。前面紧跟中文时，西文开头的地名前留一个空格。 */
 function place(id: keyof typeof SYSTEMS): string {
   const s = SYSTEMS[id];
-  return s.code === s.name ? s.name : `${s.code} ${s.name}`;
+  return s.code === s.name ? s.name : ` ${s.code} ${s.name}`;
 }
 
 function bodyName(id: string): string {
@@ -46,10 +48,8 @@ function logLine(e: LogEntry): string {
       return `你去看了${bodyName(e.body)}。`;
     case 'name':
       return `你给${bodyName(e.body)}起名“${e.name}”。此后的文书沿用这个名字。`;
-    case 'survey':
-      return e.mode === 'self'
-        ? `你亲自勘察了一个天体。${e.found > 0 ? '发现一处异常。' : '没有新的发现。'}`
-        : `AI 勘察了${place(e.system)}的全部天体。${e.found > 0 ? `发现 ${e.found} 处异常。` : '没有新的异常。'}`;
+    case 'lead':
+      return `线索：${LEADS[e.lead].title}。${LEADS[e.lead].text}`;
     case 'investigate':
       return e.mode === 'self'
         ? `你亲自调查了${bodyName(e.body)}。${EVIDENCE[e.evidence]}的结果已归档。`
@@ -59,7 +59,7 @@ function logLine(e: LogEntry): string {
     case 'harvest':
       return `${e.mode === 'self' ? '你亲自' : 'AI '}在${bodyName(e.body)}采集，得能源 ${e.energy}。`;
     case 'build':
-      return `${place(e.system)}的采能阵列${e.mode === 'self' ? '由你亲手点火' : '由 AI 建成'}。产出是标准值的 ${e.quality.toFixed(2)} 倍。`;
+      return `${place(e.system).trim()}的采能阵列${e.mode === 'self' ? '由你亲手点火' : '由 AI 建成'}。产出是标准值的 ${e.quality.toFixed(2)} 倍。`;
     case 'slingshot':
       return `你亲手做了引力弹弓。下一程加速 ${percent(e.boost)}。`;
     case 'probe':
@@ -86,9 +86,18 @@ function logLine(e: LogEntry): string {
 }
 
 function briefing(view: PublicView, since: number): string[] {
-  const lines = view.log.slice(since).map((e) => logLine(e));
+  const events = view.log.slice(since);
+  const lines: string[] = [];
+  // 路上的科研进展并成一句。
+  const levels = events.flatMap((e) => (e.t === 'level' ? [`${LINES[e.line]}到第 ${e.level} 级`] : []));
+  if (levels.length > 0) lines.push(`冷眠期间科研有进展：${levels.join('，')}。`);
+  for (const e of events) {
+    if (e.t === 'level') continue;
+    // 途中出现的线索，简报里说清楚是怎么注意到的。
+    lines.push(e.t === 'lead' ? (LEADS[e.lead].found ?? logLine(e)) : logLine(e));
+  }
   const here = SYSTEMS[view.location];
-  lines.push(`录事：${here.starLabel}。${here.role}`);
+  lines.push(here.role.startsWith(here.starLabel) ? `录事：${here.role}` : `录事：${here.starLabel}。${here.role}`);
   return lines;
 }
 

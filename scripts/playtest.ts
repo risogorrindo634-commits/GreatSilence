@@ -30,7 +30,6 @@ const MINUTES: [number, number] = [45, 60];
 const ACTION_NAMES: Record<Action['type'], string> = {
   view: '看风景',
   name: '命名',
-  survey: '勘察',
   investigate: '调查',
   tune: '调谐',
   harvest: '采集',

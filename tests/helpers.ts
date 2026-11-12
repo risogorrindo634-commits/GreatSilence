@@ -96,11 +96,11 @@ export function carefulRoute(state: GameState): GameState {
   s = play(s, { type: 'build', mode: 'self', skill: 0.8 });
   s = goTo(s, 'g2');
   s = goTo(s, 'm7');
-  s = play(s, { type: 'survey', mode: 'self', body: 'm7-1' }, { type: 'investigate', mode: 'self', body: 'm7-1' });
+  s = play(s, { type: 'investigate', mode: 'self', body: 'm7-1' });
   s = goTo(s, 'r3');
-  s = play(s, { type: 'survey', mode: 'self', body: 'r3-1' }, { type: 'tune', mode: 'self', body: 'r3-1', skill: 0.9 });
+  s = play(s, { type: 'tune', mode: 'self', body: 'r3-1', skill: 0.9 });
   s = goTo(s, 'j14');
-  s = play(s, { type: 'survey', mode: 'self', body: 'j14-2' }, { type: 'investigate', mode: 'self', body: 'j14-2' });
+  s = play(s, { type: 'investigate', mode: 'self', body: 'j14-2' });
   return play(s, { type: 'conclude', conclusion: s.truth, response: TRUTHS[s.truth].response });
 }
 
@@ -110,7 +110,6 @@ export function candidates(state: GameState): Action[] {
   for (const body of SYSTEMS[state.location].bodies) {
     out.push({ type: 'view', body: body.id });
     out.push({ type: 'name', body: body.id, name: '某处' });
-    out.push({ type: 'survey', mode: 'self', body: body.id });
     out.push({ type: 'investigate', mode: 'self', body: body.id });
     out.push({ type: 'investigate', mode: 'ai', body: body.id });
     out.push({ type: 'tune', mode: 'self', body: body.id, skill: 0.6 });
@@ -118,7 +117,6 @@ export function candidates(state: GameState): Action[] {
     out.push({ type: 'harvest', mode: 'self', body: body.id });
     out.push({ type: 'harvest', mode: 'ai', body: body.id });
   }
-  out.push({ type: 'survey', mode: 'ai' });
   out.push({ type: 'build', mode: 'self', skill: 0.5 });
   out.push({ type: 'build', mode: 'ai' });
   out.push({ type: 'slingshot', skill: 0.5 });

@@ -9,7 +9,9 @@ import { BALANCE as B } from '../src/content/balance';
 import { SYSTEMS, distance } from '../src/content/systems';
 import type { SystemId } from '../src/content/systems';
 import { TRUTHS, TRUTH_IDS } from '../src/content/truths';
-import { can, createGame, fate, fateParts, incomePerYear, level, reduce } from '../src/core/game';
+import { nextTarget } from '../src/app/guide';
+import { LEADS } from '../src/content/leads';
+import { can, createGame, fate, fateParts, incomePerYear, level, publicView, reduce } from '../src/core/game';
 import type { Action, GameState, Mode } from '../src/core/types';
 import { pad } from './text';
 
@@ -25,7 +27,8 @@ interface Policy {
   arrays: number | 'need';
   court: 'wise' | 'sign' | 'veto';
   probe: boolean;
-  route: SystemId[];
+  /** guided：不按固定路线，照界面上的“下一步”走。 */
+  route: SystemId[] | 'guided';
   /** 亲手操作的水平，0 到 1。 */
   skill: number;
 }
@@ -34,6 +37,8 @@ const FULL: SystemId[] = ['g2', 'm7', 'p12', 'r3', 'j14'];
 const SHORT: SystemId[] = ['g2', 'm7', 'r3', 'j14'];
 
 const POLICIES: Policy[] = [
+  { name: '跟着下一步', chores: 'ai', evidence: 'self', slingshot: false, arrays: 1, court: 'wise', probe: true, route: 'guided', skill: 0.7 },
+  { name: '下一步全交AI', chores: 'ai', evidence: 'ai', slingshot: false, arrays: 1, court: 'wise', probe: true, route: 'guided', skill: 0.7 },
   { name: '稳妥', chores: 'ai', evidence: 'self', slingshot: false, arrays: 'need', court: 'wise', probe: true, route: SHORT, skill: 0.7 },
   { name: '稳妥但踩陷阱', chores: 'ai', evidence: 'self', slingshot: false, arrays: 'need', court: 'sign', probe: true, route: SHORT, skill: 0.7 },
   { name: '亲力亲为', chores: 'self', evidence: 'self', slingshot: true, arrays: 'need', court: 'wise', probe: false, route: FULL, skill: 0.7 },
@@ -85,11 +90,10 @@ function stay(state: GameState, p: Policy, rest: SystemId[]): GameState {
     for (let i = 0; i < p.arrays; i++) s = attempt(s, build);
   }
 
-  const anomalous = sys.bodies.filter((b) => b.anomaly);
+  // 线索指到的天体才知道有异常；没出现的线索，这一站就看不到。
+  const anomalous = sys.bodies.filter((b) => b.anomaly && s.bodies[b.id]!.anomalyKnown);
   if (anomalous.length > 0) {
-    if (p.chores === 'ai') s = attempt(s, { type: 'survey', mode: 'ai' });
     for (const body of anomalous) {
-      if (p.chores === 'self') s = attempt(s, { type: 'survey', mode: 'self', body: body.id });
       if (body.anomaly === 'signal' || body.anomaly === 'pulsar') {
         s = attempt(s, p.evidence === 'self' ? { type: 'tune', mode: 'self', body: body.id, skill: p.skill } : { type: 'tune', mode: 'ai', body: body.id });
       } else {
@@ -114,12 +118,68 @@ function leave(state: GameState, p: Policy, to: SystemId): GameState {
   return attempt(s, { type: 'depart', to });
 }
 
-function run(p: Policy, truth: (typeof TRUTH_IDS)[number]): GameState {
+/** 照“下一步”走：每到一个能建阵列的星系建一座，线索按打法亲自做或交给 AI，能源不够就采集。 */
+function runGuided(p: Policy, truth: (typeof TRUTH_IDS)[number]): GameState {
   let s = createGame(1, truth);
-  s = stay(s, p, p.route);
-  p.route.forEach((to, i) => {
+  const built = new Set<SystemId>();
+  const build: Action = p.chores === 'self' ? { type: 'build', mode: 'self', skill: p.skill } : { type: 'build', mode: 'ai' };
+  for (let i = 0; i < 300 && !s.ending; i++) {
+    if (!built.has(s.location) && !s.pending) {
+      built.add(s.location);
+      if (SYSTEMS[s.location].arrayOutput >= 1) for (let k = 0; k < (p.arrays === 'need' ? 1 : p.arrays); k++) s = attempt(s, build);
+    }
+    const view = publicView(s);
+    const next = nextTarget(view);
+    const richest = [...view.bodies].sort((a, b) => b.resource - a.resource)[0]!;
+    const harvest: Action = { type: 'harvest', mode: p.chores, body: richest.id };
+    let action: Action | null = null;
+    switch (next.kind) {
+      case 'court': {
+        const item = COURT[view.pending!];
+        const wise = item.trap.truth === s.truth ? 'veto' : 'sign';
+        action = { type: 'rule', item: item.id, decision: p.court === 'wise' ? wise : p.court };
+        if (can(s, action)) action = { type: 'rule', item: item.id, decision: 'veto' };
+        break;
+      }
+      case 'here': {
+        const body = LEADS[next.lead].body!;
+        const signal = LEADS[next.lead].evidence === 'signal' || LEADS[next.lead].evidence === 'pulsar';
+        if (signal) action = p.evidence === 'self' ? { type: 'tune', mode: 'self', body, skill: p.skill } : { type: 'tune', mode: 'ai', body };
+        else action = { type: 'investigate', mode: p.evidence, body };
+        break;
+      }
+      case 'probe':
+        action = next.short > 0 ? harvest : p.probe ? { type: 'probe' } : null;
+        break;
+      case 'travel':
+        if (next.short > 0) action = harvest;
+        else {
+          if (p.slingshot) s = attempt(s, { type: 'slingshot', skill: p.skill });
+          action = { type: 'depart', to: next.to };
+        }
+        break;
+      case 'wait':
+        action = { type: 'wait', years: 50 };
+        break;
+      default:
+        action = null;
+    }
+    if (!action) break;
+    const after = attempt(s, action);
+    if (after === s) break;
+    s = after;
+  }
+  return attempt(s, { type: 'conclude', conclusion: truth, response: TRUTHS[truth].response });
+}
+
+function run(p: Policy, truth: (typeof TRUTH_IDS)[number]): GameState {
+  if (p.route === 'guided') return runGuided(p, truth);
+  const route = p.route;
+  let s = createGame(1, truth);
+  s = stay(s, p, route);
+  route.forEach((to, i) => {
     s = leave(s, p, to);
-    s = stay(s, p, p.route.slice(i + 1));
+    s = stay(s, p, route.slice(i + 1));
   });
   // 假定这位玩家读对了证据。
   return attempt(s, { type: 'conclude', conclusion: truth, response: TRUTHS[truth].response });

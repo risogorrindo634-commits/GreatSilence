@@ -7,7 +7,7 @@ import type { Action } from '../src/core/types';
 
 const OPENING: Action[] = [
   { type: 'view', body: 'home-1' },
-  { type: 'survey', mode: 'ai' },
+  { type: 'build', mode: 'ai' },
   { type: 'harvest', mode: 'self', body: 'home-3' },
 ];
 const CONCLUDE: Action = { type: 'conclude', conclusion: 'hunter', response: 'silence' };

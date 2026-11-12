@@ -1,8 +1,9 @@
 import type { CourtId, FactionId } from '../content/court';
+import type { LeadId } from '../content/leads';
 import type { AnomalyKind, BodyKind, StarKind, SystemId } from '../content/systems';
 import type { ResponseId, TruthId } from '../content/truths';
 
-export type { CourtId, FactionId, SystemId, TruthId, ResponseId };
+export type { CourtId, FactionId, LeadId, SystemId, TruthId, ResponseId };
 
 export type Mode = 'self' | 'ai';
 export type LineId = 'propulsion' | 'longevity' | 'harvest' | 'cosmology';
@@ -19,7 +20,7 @@ export type EndingId = 'clear' | 'powerless' | 'lucky' | 'failed' | 'undecided' 
 /** 一处天体上玩家留下的痕迹。 */
 export interface BodyState {
   viewed: boolean;
-  surveyed: boolean;
+  /** 线索指到这里之后才知道这里有异常。 */
   anomalyKnown: boolean;
   /** 已经采集过几次。 */
   harvested: number;
@@ -78,7 +79,7 @@ export type LogEvent =
   | { t: 'radiation'; days: number }
   | { t: 'view'; body: string }
   | { t: 'name'; body: string; name: string }
-  | { t: 'survey'; mode: Mode; system: SystemId; found: number }
+  | { t: 'lead'; lead: LeadId }
   | { t: 'investigate'; mode: Mode; body: string; evidence: EvidenceId }
   | { t: 'tune'; mode: Mode; body: string; evidence: EvidenceId; clarity: number }
   | { t: 'harvest'; mode: Mode; body: string; energy: number }
@@ -102,7 +103,7 @@ export type LogEntry = LogEvent & { year: number };
  * 真相在这里，界面拿不到这个对象，只拿得到 PublicView。
  */
 export interface GameState {
-  version: 2;
+  version: 3;
   seed: number;
   rng: number;
   truth: TruthId;
@@ -118,6 +119,8 @@ export interface GameState {
 
   location: SystemId;
   visited: SystemId[];
+  /** 已经出现的线索，按出现的先后。 */
+  leads: LeadId[];
   /** 为下一程准备好的弹弓加速；null 表示还没做，启航时由 AI 按保守方案做。 */
   slingshot: number | null;
 
@@ -159,9 +162,6 @@ export interface GameState {
 export type Action =
   | { type: 'view'; body: string }
   | { type: 'name'; body: string; name: string }
-  /** 亲自勘察一个天体，或者让 AI 勘察整个星系。 */
-  | { type: 'survey'; mode: 'self'; body: string }
-  | { type: 'survey'; mode: 'ai' }
   | { type: 'investigate'; mode: Mode; body: string }
   /** skill 是界面里小操作的成绩，0 到 1。 */
   | { type: 'tune'; mode: 'self'; body: string; skill: number }
@@ -256,11 +256,10 @@ export interface BodyView {
   scene: string;
   wonder: { name: string; basis: string } | null;
   viewed: boolean;
-  surveyed: boolean;
   /** 玩家起的名字。 */
   given: string | null;
-  /** 勘察之后才知道。 */
-  resource: number | null;
+  /** 这一次采集能得到的能源。 */
+  resource: number;
   /** 已知的异常。signal 包括真正的信号和干扰项，界面分不出来。 */
   anomaly: 'signal' | 'ruins' | 'infrared' | null;
   harvested: number;
@@ -278,10 +277,18 @@ export interface SystemView {
   current: boolean;
   canBuild: boolean;
   arrays: number;
-  /** 宇宙规律科研到一定级别后，标出这里是否有值得调查的东西；否则是 null。 */
-  anomalyHint: boolean | null;
+  /** 这里的线索进展到哪一步；这里没有已出现的线索是 null。 */
+  lead: LeadStatus | null;
   /** 从当前位置去那里要花什么；当前所在的星系是 null。 */
   travel: { distance: number; speed: number; years: number; energy: number } | null;
+}
+
+/** open：还没去；partial：有了结果，但还能更清楚，或者探测器还在路上；done：取得了。 */
+export type LeadStatus = 'open' | 'partial' | 'done';
+
+export interface LeadView {
+  id: LeadId;
+  status: LeadStatus;
 }
 
 export interface LineView {
@@ -337,6 +344,8 @@ export interface PublicView {
   pending: CourtId | null;
   rulings: Partial<Record<CourtId, 'sign' | 'veto'>>;
 
+  /** 已经出现的线索。文字在 content/leads.ts。 */
+  leads: LeadView[];
   evidence: Observation[];
   eliminated: TruthId | null;
   board: Record<string, Mark>;

@@ -33,7 +33,6 @@ export const BALANCE = {
 
   /** 亲自做的天数和交给 AI 的年数。规格：GDD 6.2。 */
   view: { days: 2 },
-  survey: { days: 5, years: 30 },
   /** 亲自调查的天数随异常而定，见 systems.ts。 */
   investigate: { years: 60 },
   /** 每采一次，下一次减半，减到原来的四分之一为止。 */
@@ -81,13 +80,16 @@ export const BALANCE = {
     /** 采能：各级的阵列产出倍率。 */
     harvest: [1, 1.2, 1.45, 1.75, 2.1, 2.5],
     /** 宇宙规律：各项效果从第几级开始生效。 */
+    /** 宇宙规律各级的效果。线索替代了原来的“标出异常”，见 SLICE 第 8 节。 */
     cosmology: {
-      markLocalAt: 1,
-      markMapAt: 2,
-      aiTuneAt: 3,
+      aiTuneAt: 1,
       aiTuneClarity: 0.55,
-      investigateAt: 4,
+      investigateAt: 2,
       investigateDaysSaved: 3,
+      probeReliableAt: 3,
+      reliableFailureRate: 0.1,
+      aiInvestigateAt: 4,
+      aiInvestigateFactor: 0.5,
       eliminateAt: 5,
     },
   },

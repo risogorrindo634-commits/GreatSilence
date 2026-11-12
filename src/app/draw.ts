@@ -255,9 +255,14 @@ export function drawMap(canvas: HTMLCanvasElement, view: PublicView, selected: s
       ctx.arc(x, y, 12, 0, Math.PI * 2);
       ctx.stroke();
     }
-    if (sys.anomalyHint) {
+    // 线索：实心是还没去，空心是还能看得更细。
+    if (sys.lead === 'open') {
       ctx.fillStyle = AMBER;
-      ctx.fillRect(x + 9, y - 12, 4, 4);
+      ctx.fillRect(x + 9, y - 13, 6, 6);
+    } else if (sys.lead === 'partial') {
+      ctx.strokeStyle = AMBER;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 9.5, y - 12.5, 5, 5);
     }
 
     ctx.fillStyle = sys.id === selected || sys.current ? BRIGHT : TEXT;
@@ -265,8 +270,9 @@ export function drawMap(canvas: HTMLCanvasElement, view: PublicView, selected: s
     hits.push({ id: sys.id, x, y, r: 30 });
   }
 
-  // K-41：只能派探测器去。
-  ctx.strokeStyle = TEXT;
+  // K-41：只能派探测器去。线索还没取得时是黄色的。
+  const probeLead = view.leads.find((l) => l.id === 'probe');
+  ctx.strokeStyle = probeLead && probeLead.status !== 'done' ? AMBER : TEXT;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(kx, ky - 6);

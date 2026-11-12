@@ -811,3 +811,73 @@ textarea.record-text[hidden] {
 .survey .chips button {
   min-width: 64px;
 }
+
+/* ---------------------------------------------------------------- 线索与下一步 */
+
+button.next {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: #15120b;
+  border: 1px solid var(--self);
+  border-radius: 3px;
+  text-align: left;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--bright);
+}
+
+button.next b {
+  margin-right: 8px;
+  font-weight: 600;
+  color: var(--self);
+}
+
+.card.event {
+  border-color: #3a3220;
+}
+
+.row.lead h4,
+ul.leads b {
+  color: var(--self);
+}
+
+.row.lead.done h4,
+ul.leads li.done b {
+  color: var(--dim);
+}
+
+.row.lead h4 small,
+ul.leads small {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+ul.leads li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0 8px 10px;
+  border-left: 2px solid var(--self);
+}
+
+ul.leads li.partial {
+  border-left-style: dashed;
+}
+
+ul.leads li.done {
+  border-left-color: var(--line);
+}
+
+ul.leads li p {
+  font-size: 13.5px;
+}
+
+.row h4 small {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--dim);
+}

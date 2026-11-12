@@ -2,6 +2,7 @@
  * 界面的外壳：把视图画出来，把点击变成操作。
  * 每次状态变化都整页重画；画面很小，这样最简单。
  */
+import { ARCHIVE } from '../content/leads';
 import { SYSTEMS, findBody } from '../content/systems';
 import type { SystemId } from '../content/systems';
 import type { ResponseId, TruthId } from '../content/truths';
@@ -12,7 +13,8 @@ import { EVIDENCE_NAMES, escapeHtml, num } from './labels';
 import { playIgnition, playSlingshot, playTuning } from './minigames';
 import { recordText } from './record';
 import type { Again } from './record';
-import { boardScreen, courtScreen, endingScreen, header, mapScreen, recordScreen, researchScreen, systemScreen, tabs } from './screens';
+import { nextTarget } from './guide';
+import { boardScreen, courtScreen, endingScreen, header, mapScreen, nextLine, recordScreen, researchScreen, systemScreen, tabs } from './screens';
 import type { Ctx, Tab, UiState } from './screens';
 import type { Scribe } from './scribe';
 import type { Store } from './store';
@@ -20,6 +22,7 @@ import type { Store } from './store';
 const INTRO = [
   '你是未来文明里最后一位人类执政官。',
   '宇宙里本该到处是文明，却一片沉默。在同样的命运降临之前，带领一个由 AI 运转的文明弄清楚：它们都去哪了。',
+  `${ARCHIVE}出发前，AI 整理出三条线索，每一条都指向一个地方。`,
   '任何事 AI 都能代劳。亲自做，花的是你的清醒日；交给 AI，花的是世界的时间。',
   '证据要你自己去看。看懂了，就下结论，并签署一项收不回的回应。',
 ];
@@ -233,7 +236,7 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
       record: () => recordScreen(ctx),
     };
     const legend = '<p class="legend"><i class="self"></i>花你的清醒日 <i class="ai"></i>花世界的时间</p>';
-    root.innerHTML = `${header(view)}${delta ? `<p class="delta">${delta}</p>` : legend}<main>${screens[ui.tab]()}</main>${tabs(ctx)}`;
+    root.innerHTML = `${header(view)}${nextLine(view)}${delta ? `<p class="delta">${delta}</p>` : legend}<main>${screens[ui.tab]()}</main>${tabs(ctx)}`;
     paint();
   }
 
@@ -286,10 +289,17 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
       case 'scene':
         showScene(arg);
         break;
-      case 'body':
-        ui.body = arg;
+      case 'next': {
+        // 去“下一步”说的那个地方。
+        const next = nextTarget(store.view());
+        const tab: Record<typeof next.kind, Tab> = { court: 'court', here: 'system', probe: 'system', travel: 'map', wait: 'system', refine: 'board', conclude: 'board', none: ui.tab };
+        ui.tab = tab[next.kind];
+        if (next.kind === 'travel') ui.dest = next.to;
+        delta = '';
         render();
+        window.scrollTo(0, 0);
         break;
+      }
       case 'dest':
         ui.dest = arg as SystemId;
         render();
@@ -377,5 +387,6 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
   window.addEventListener('resize', () => paint());
 
   render();
-  if (store.view().log.length === 1) showIntro();
+  // 还什么都没做：开局的日志里只有出发和档案里的线索。
+  if (store.view().log.every((e) => e.t === 'start' || e.t === 'lead')) showIntro();
 }

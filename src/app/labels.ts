@@ -12,7 +12,7 @@ export const LINE_EFFECTS: Record<LineId, string> = {
   propulsion: '提高航速。探测器也跟着变快。',
   longevity: '每一级多 8 个清醒日。前三级自动生效；第四、五级是改造，要你点头，代价是权威。',
   harvest: '提高阵列的产出。',
-  cosmology: '一级：进入星系就标出异常。二级：星图上标出哪里有异常。三级：AI 调谐更清楚。四级：亲自调查少花 3 天。五级：排除一种错误的解释。',
+  cosmology: '一级：AI 调谐更清楚。二级：亲自调查少花 3 天。三级：探测器的故障从四分之一降到十分之一。四级：交给 AI 的调查只花一半的年份。五级：排除一种错误的解释。',
 };
 
 export const ENDING_NAMES: Record<EndingId, string> = {
@@ -38,12 +38,6 @@ export const EVIDENCE_SOURCES: Record<EvidenceId, string> = {
   ruins: '晨昏的眼球世界',
   probe: '派往 K-41，高速掠过',
   pulsar: '在灯塔收到',
-};
-
-export const ANOMALY_NAMES: Record<'signal' | 'ruins' | 'infrared', string> = {
-  signal: '一个信号',
-  ruins: '人造结构',
-  infrared: '适合红外观测的窗口',
 };
 
 export const STAR_COLORS: Record<StarKind, string> = {

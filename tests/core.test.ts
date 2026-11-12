@@ -3,10 +3,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { COURT, COURT_IDS } from '../src/content/court';
 import { SYSTEMS } from '../src/content/systems';
+import type { SystemId } from '../src/content/systems';
 import { RESPONSE_IDS, TRUTHS } from '../src/content/truths';
 import type { TruthId } from '../src/content/truths';
 import { observe } from '../src/core/evidence';
-import { augmentsAvailable, can, computePerYear, createGame, fate, judge, publicView, reduce, replay } from '../src/core/game';
+import { augmentsAvailable, can, computePerYear, cost, createGame, fate, judge, publicView, reduce, replay } from '../src/core/game';
 import type { Action, EndingId, EvidenceState, GameState, ProbeState } from '../src/core/types';
 import { ALL_TRUTHS, B, allKeys, carefulRoute, deepFreeze, everyEnding, goTo, play, randomWalk, rich } from './helpers';
 
@@ -121,7 +122,7 @@ describe('视图不泄密', () => {
   });
 
   it('干扰项在视图里和真正的信号用同一个标记', () => {
-    let s = play(rich(createGame(SEED)), { type: 'depart', to: 'p12' }, { type: 'survey', mode: 'ai' });
+    let s = play(rich(createGame(SEED)), { type: 'depart', to: 'p12' });
     const anomalies = publicView(s).bodies.map((b) => b.anomaly);
     expect(anomalies).toContain('signal');
     expect(JSON.stringify(publicView(s).bodies)).not.toContain('pulsar');
@@ -198,11 +199,8 @@ describe('证据可区分', () => {
 });
 
 describe('两种时间', () => {
-  /** 到晨昏，让 AI 勘察过，手里有足够的能源。 */
-  const base = (): GameState => {
-    const s = goTo(goTo(play(createGame(SEED, 'hunter'), { type: 'build', mode: 'self', skill: 0.5 }), 'g2'), 'm7');
-    return play(s, { type: 'survey', mode: 'ai' });
-  };
+  /** 到晨昏，手里有足够的能源。 */
+  const base = (): GameState => goTo(goTo(play(createGame(SEED, 'hunter'), { type: 'build', mode: 'self', skill: 0.5 }), 'g2'), 'm7');
 
   const pairs: [string, Action, Action][] = [
     ['调查', { type: 'investigate', mode: 'self', body: 'm7-1' }, { type: 'investigate', mode: 'ai', body: 'm7-1' }],
@@ -224,17 +222,6 @@ describe('两种时间', () => {
       expect(b.delegatedYears - s.delegatedYears).toBe(b.year - s.year);
     });
   }
-
-  it('勘察：亲自勘察一个天体，AI 勘察整个星系', () => {
-    const s = goTo(createGame(SEED, 'hunter'), 'm7');
-    const a = reduce(s, { type: 'survey', mode: 'self', body: 'm7-1' });
-    expect([a.year - s.year, s.wakeDays - a.wakeDays]).toEqual([0, B.survey.days]);
-    expect(SYSTEMS.m7.bodies.map((b) => a.bodies[b.id]!.surveyed)).toEqual([true, false, false]);
-
-    const b = reduce(s, { type: 'survey', mode: 'ai' });
-    expect([b.year - s.year, s.wakeDays - b.wakeDays]).toEqual([B.survey.years, 0]);
-    expect(SYSTEMS.m7.bodies.every((body) => b.bodies[body.id]!.surveyed)).toBe(true);
-  });
 
   it('观景只能亲自去', () => {
     const s = createGame(SEED);
@@ -409,10 +396,24 @@ describe('科研与航行', () => {
     expect(s.wakeDays).toBe(B.start.wakeDays + B.research.longevityDays);
   });
 
-  it('宇宙规律：一级标出本星系的异常，五级排除一种错误的解释', () => {
+  it('宇宙规律：一级 AI 调谐更清楚，二级亲自调查省 3 天，四级 AI 调查减半，五级排除一种错误的解释', () => {
+    const at = (s: GameState, lv: number): GameState => ({
+      ...s,
+      research: { ...s.research, points: { ...s.research.points, cosmology: lv === 0 ? 0 : B.research.thresholds[lv - 1]! } },
+    });
+    const m7 = play(rich(createGame(SEED, 'hunter')), { type: 'depart', to: 'm7' });
+    const self: Action = { type: 'investigate', mode: 'self', body: 'm7-1' };
+    const ai: Action = { type: 'investigate', mode: 'ai', body: 'm7-1' };
+    expect(cost(at(m7, 0), self).days - cost(at(m7, 2), self).days).toBe(B.research.cosmology.investigateDaysSaved);
+    expect(cost(at(m7, 4), ai).years).toBe(cost(at(m7, 0), ai).years * B.research.cosmology.aiInvestigateFactor);
+
+    const r3 = play(rich(createGame(SEED, 'hunter')), { type: 'depart', to: 'r3' });
+    const tune: Action = { type: 'tune', mode: 'ai', body: 'r3-1' };
+    expect(reduce(at(r3, 0), tune).evidence.signal!.clarity).toBe(B.tune.ai);
+    expect(reduce(at(r3, 1), tune).evidence.signal!.clarity).toBe(B.research.cosmology.aiTuneClarity);
+
     const all: Action = { type: 'research', allocation: { propulsion: 0, longevity: 0, harvest: 0, cosmology: 1 } };
-    let s = play(rich(createGame(SEED, 'hunter')), all, { type: 'wait', years: 200 }, { type: 'depart', to: 'm7' });
-    expect(publicView(s).bodies.find((b) => b.id === 'm7-1')!.anomaly).toBe('ruins');
+    let s = play(rich(createGame(SEED, 'hunter')), all);
     while (!s.eliminated && !s.ending) s = play(s, { type: 'wait', years: 100 });
     expect(s.eliminated).not.toBeNull();
     expect(s.eliminated).not.toBe('hunter');
@@ -519,6 +520,17 @@ describe('探测器', () => {
     expect(lost / 400).toBeGreaterThan(B.probe.failureRate - 0.07);
     expect(lost / 400).toBeLessThan(B.probe.failureRate + 0.07);
     expect(places.size).toBeGreaterThan(50);
+  });
+
+  it('宇宙规律三级之后，探测器的故障少了', () => {
+    let lost = 0;
+    for (let seed = 1; seed <= 400; seed++) {
+      const s = createGame(seed, 'dream');
+      const reliable = { ...s, research: { ...s.research, points: { ...s.research.points, cosmology: B.research.thresholds[2]! } } };
+      if (launchAndWait(reliable).probes[0]!.lostAt !== null) lost++;
+    }
+    expect(lost / 400).toBeGreaterThan(B.research.cosmology.reliableFailureRate - 0.05);
+    expect(lost / 400).toBeLessThan(B.research.cosmology.reliableFailureRate + 0.05);
   });
 
   it('一次故障失联和猎手的掐断，写出来是同一种话', () => {
@@ -671,6 +683,68 @@ describe('不会卡死', () => {
     while (can(s, { type: 'depart', to: 'j14' }) && harvests++ < 20) s = reduce(s, { type: 'harvest', mode: 'self', body: 'r3-1' });
     expect(can(s, { type: 'depart', to: 'j14' })).toBeNull();
     expect(harvests).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('线索', () => {
+  const ids = (s: GameState): string[] => publicView(s).leads.map((l) => l.id);
+  /** 启航，到了之后把朝堂上的事否决掉，免得挡住下一程。 */
+  const fly = (s: GameState, to: SystemId): GameState => {
+    const t = play(rich(s), { type: 'depart', to });
+    return t.pending ? play(t, { type: 'rule', item: t.pending, decision: 'veto' }) : t;
+  };
+
+  it('出发时档案里有三条线索，线索指到的天体知道有异常', () => {
+    const s = createGame(SEED);
+    expect(ids(s)).toEqual(['ruins', 'signal', 'probe']);
+    expect(s.bodies['m7-1']!.anomalyKnown).toBe(true);
+    expect(s.bodies['r3-1']!.anomalyKnown).toBe(true);
+    expect(s.bodies['p12-1']!.anomalyKnown).toBe(false);
+    expect(s.log.filter((e) => e.t === 'lead')).toHaveLength(3);
+  });
+
+  it('途中出现另外两条，不管走哪条路线', () => {
+    for (const route of [['g2', 'm7'], ['p12', 'r3'], ['m7', 'g2']] as const) {
+      let s = fly(createGame(SEED), route[0]);
+      expect(ids(s)).toEqual(['ruins', 'signal', 'probe', 'pulsar']);
+      expect(s.bodies['p12-1']!.anomalyKnown).toBe(true);
+      s = fly(s, route[1]);
+      expect(ids(s)).toEqual(['ruins', 'signal', 'probe', 'pulsar', 'infrared']);
+    }
+  });
+
+  it('没出现的线索，那里的异常不能调查', () => {
+    const at = { ...rich(createGame(SEED)), location: 'j14' as const };
+    expect(can(at, { type: 'investigate', mode: 'self', body: 'j14-2' })).not.toBeNull();
+  });
+
+  it('线索的进展：AI 的结果算一半，亲自查清才算取得；探测器要有两艘的消息', () => {
+    const status = (s: GameState, id: string): string => publicView(s).leads.find((l) => l.id === id)!.status;
+    let s = rich(createGame(SEED, 'dream'));
+    expect(status(s, 'ruins')).toBe('open');
+    s = play(fly(s, 'm7'), { type: 'investigate', mode: 'ai', body: 'm7-1' });
+    expect(status(s, 'ruins')).toBe('partial');
+    s = play(s, { type: 'investigate', mode: 'self', body: 'm7-1' });
+    expect(status(s, 'ruins')).toBe('done');
+
+    s = play(fly(s, 'r3'), { type: 'tune', mode: 'ai', body: 'r3-1' });
+    expect(status(s, 'signal')).toBe('partial');
+    s = play(s, { type: 'tune', mode: 'self', body: 'r3-1', skill: 1 });
+    expect(status(s, 'signal')).toBe('done');
+
+    s = play(rich(s), { type: 'probe' });
+    expect(status(s, 'probe')).toBe('partial');
+    s = play(rich(s), { type: 'probe' }, { type: 'wait', years: 200 });
+    expect(s.probes.every((p) => p.reported)).toBe(true);
+    expect(status(s, 'probe')).toBe('done');
+  });
+
+  it('星图上标出每个星系的线索进展到哪一步', () => {
+    const lead = (s: GameState, id: string) => publicView(s).systems.find((v) => v.id === id)!.lead;
+    let s = rich(createGame(SEED));
+    expect([lead(s, 'home'), lead(s, 'g2'), lead(s, 'm7'), lead(s, 'r3'), lead(s, 'p12')]).toEqual([null, null, 'open', 'open', null]);
+    s = play(fly(s, 'm7'), { type: 'investigate', mode: 'ai', body: 'm7-1' });
+    expect([lead(s, 'm7'), lead(s, 'p12')]).toEqual(['partial', 'open']);
   });
 });
 

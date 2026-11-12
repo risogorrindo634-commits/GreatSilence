@@ -9,6 +9,8 @@
 import { BALANCE as B } from '../content/balance';
 import { COURT, COURT_IDS, FACTION_IDS, courtAt } from '../content/court';
 import type { FactionId } from '../content/court';
+import { LEADS, LEAD_IDS } from '../content/leads';
+import type { LeadDef } from '../content/leads';
 import { BODY_IDS, PROBE_TARGET, START_SYSTEM, SYSTEMS, SYSTEM_IDS, distance, findBody } from '../content/systems';
 import type { BodyDef, SystemId } from '../content/systems';
 import { RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../content/truths';
@@ -23,6 +25,7 @@ import type {
   EndingId,
   EvidenceId,
   GameState,
+  LeadStatus,
   LineId,
   LogEvent,
   PublicView,
@@ -42,11 +45,11 @@ export function createGame(seed: number, truth?: TruthId): GameState {
 
   const bodies: Record<string, BodyState> = {};
   for (const id of BODY_IDS) {
-    bodies[id] = { viewed: false, surveyed: false, anomalyKnown: false, harvested: 0, name: null };
+    bodies[id] = { viewed: false, anomalyKnown: false, harvested: 0, name: null };
   }
 
-  return {
-    version: 2,
+  const state: GameState = {
+    version: 3,
     seed,
     rng: radiusRoll.state,
     truth: picked,
@@ -58,6 +61,7 @@ export function createGame(seed: number, truth?: TruthId): GameState {
     support: { outward: B.start.support, guard: B.start.support, inward: B.start.support },
     location: START_SYSTEM,
     visited: [START_SYSTEM],
+    leads: [],
     slingshot: null,
     delegatedYears: 0,
     sleptYears: 0,
@@ -80,6 +84,8 @@ export function createGame(seed: number, truth?: TruthId): GameState {
     conclusion: null,
     ending: null,
   };
+  revealLeads(state);
+  return state;
 }
 
 /** 从头重放一串操作。 */
@@ -214,6 +220,16 @@ function investigateDays(state: GameState, def: BodyDef): number {
   return Math.max(1, (def.investigateDays ?? 10) - saved);
 }
 
+function aiInvestigateYears(state: GameState): number {
+  const c = B.research.cosmology;
+  return Math.round(B.investigate.years * (level(state, 'cosmology') >= c.aiInvestigateAt ? c.aiInvestigateFactor : 1));
+}
+
+function probeFailureRate(state: GameState): number {
+  const c = B.research.cosmology;
+  return level(state, 'cosmology') >= c.probeReliableAt ? c.reliableFailureRate : B.probe.failureRate;
+}
+
 function evidenceOf(def: BodyDef): EvidenceId | null {
   return def.anomaly ?? null;
 }
@@ -227,10 +243,8 @@ export function cost(state: GameState, action: Action): Cost {
   switch (action.type) {
     case 'view':
       return { ...FREE, days: B.view.days };
-    case 'survey':
-      return action.mode === 'self' ? { ...FREE, days: B.survey.days } : { ...FREE, years: B.survey.years };
     case 'investigate': {
-      if (action.mode === 'ai') return { ...FREE, years: B.investigate.years };
+      if (action.mode === 'ai') return { ...FREE, years: aiInvestigateYears(state) };
       const found = findBody(action.body);
       return { ...FREE, days: found ? investigateDays(state, found.body) : 0 };
     }
@@ -298,15 +312,6 @@ function canSpecific(state: GameState, action: Action): string | null {
       const name = typeof action.name === 'string' ? action.name.trim() : '';
       if (name.length < 1 || name.length > 12) return '名字要在 1 到 12 个字之间。';
       return null;
-    }
-    case 'survey': {
-      if (action.mode === 'self') {
-        if (!localBody(state, action.body)) return '它不在这个星系。';
-        if (state.bodies[action.body]?.surveyed) return '已经勘察过了。';
-        return null;
-      }
-      const left = SYSTEMS[state.location].bodies.some((b) => !state.bodies[b.id]?.surveyed);
-      return left ? null : '这个星系已经勘察完了。';
     }
     case 'investigate': {
       const def = localBody(state, action.body);
@@ -463,7 +468,6 @@ function addPoints(d: Draft, line: LineId, points: number, when?: (threshold: nu
     // 延寿的前几级自动生效；之后的每一级是一次改造，要等执政官点头（augment）。
     if (line === 'longevity' && lv <= B.research.longevityFreeLevels) d.wakeDays += B.research.longevityDays;
     if (line === 'cosmology') {
-      if (lv === B.research.cosmology.markLocalAt) markAnomalies(d);
       if (lv === B.research.cosmology.eliminateAt && !d.eliminated) {
         const wrong = TRUTH_IDS.filter((t) => t !== d.truth);
         const pick = wrong[Math.floor(draw(d) * wrong.length)];
@@ -476,10 +480,34 @@ function addPoints(d: Draft, line: LineId, points: number, when?: (threshold: nu
   }
 }
 
-function markAnomalies(d: Draft): void {
-  for (const def of SYSTEMS[d.location].bodies) {
-    const body = d.bodies[def.id];
-    if (def.anomaly && body) body.anomalyKnown = true;
+/** 走过的星系够多了，途中注意到的线索就出现；线索指到的天体从此知道有异常。 */
+function revealLeads(d: Draft): void {
+  for (const id of LEAD_IDS) {
+    const def = LEADS[id];
+    if (d.leads.includes(id) || d.visited.length - 1 < def.revealAfter) continue;
+    d.leads.push(id);
+    if (def.body) d.bodies[def.body]!.anomalyKnown = true;
+    record(d, { t: 'lead', lead: id });
+  }
+}
+
+/** 一条线索进展到哪一步。只看玩家已经拿到手的东西，三种真相下判断方法一样。 */
+export function leadStatus(state: GameState, def: LeadDef): LeadStatus {
+  const e = state.evidence;
+  switch (def.evidence) {
+    case 'signal':
+      return !e.signal ? 'open' : e.signal.clarity >= B.tune.detailAt ? 'done' : 'partial';
+    case 'pulsar':
+      return !e.pulsar ? 'open' : e.pulsar.clarity >= B.tune.naturalAt ? 'done' : 'partial';
+    case 'ruins':
+    case 'infrared': {
+      const have = e[def.evidence];
+      return !have ? 'open' : have.fine ? 'done' : 'partial';
+    }
+    case 'probe': {
+      const reported = state.probes.filter((p) => p.reported).length;
+      return reported >= 2 ? 'done' : state.probes.length > 0 ? 'partial' : 'open';
+    }
   }
 }
 
@@ -497,7 +525,7 @@ function arrive(d: Draft, to: SystemId, years: number, speed: number): void {
     d.wakeDays -= sys.arrivalDays;
     record(d, { t: 'radiation', days: sys.arrivalDays });
   }
-  if (level(d, 'cosmology') >= B.research.cosmology.markLocalAt) markAnomalies(d);
+  revealLeads(d);
 
   const item = courtAt(to);
   if (first && item && !d.rulings[item.id]) {
@@ -565,22 +593,6 @@ export function reduce(state: GameState, action: Action): GameState {
       record(d, { t: 'name', body: action.body, name });
       break;
     }
-    case 'survey': {
-      const targets = action.mode === 'self' ? [action.body] : SYSTEMS[d.location].bodies.map((b) => b.id);
-      if (action.mode === 'self') spendDays(d, c.days, true);
-      else passYears(d, c.years, 'delegated');
-      let found = 0;
-      for (const id of targets) {
-        const body = d.bodies[id]!;
-        body.surveyed = true;
-        if (findBody(id)?.body.anomaly && !body.anomalyKnown) {
-          body.anomalyKnown = true;
-          found++;
-        }
-      }
-      record(d, { t: 'survey', mode: action.mode, system: d.location, found });
-      break;
-    }
     case 'investigate': {
       const id = evidenceOf(findBody(action.body)!.body) as 'ruins' | 'infrared';
       if (action.mode === 'self') spendDays(d, c.days, true);
@@ -638,7 +650,7 @@ export function reduce(state: GameState, action: Action): GameState {
     case 'probe': {
       const dist = distance(SYSTEMS[d.location].pos, PROBE_TARGET.pos);
       // 两个随机数无论用不用都抽，这样同一个种子在不同真相下用的是同一串。
-      const failed = draw(d) < B.probe.failureRate;
+      const failed = draw(d) < probeFailureRate(state);
       const where = Math.round(draw(d) * dist * 10) / 10;
       let lostAt: number | null = null;
       if (TRUTHS[d.truth].evidence.probe.silenced) lostAt = Math.min(d.silenceRadius, dist);
@@ -711,7 +723,12 @@ export function reduce(state: GameState, action: Action): GameState {
 
 /** 界面能看到的一切。真相只在结局之后出现。 */
 export function publicView(state: GameState): PublicView {
-  const cosmology = level(state, 'cosmology');
+  const leads = state.leads.map((id) => ({ id, status: leadStatus(state, LEADS[id]) }));
+  /** 一个星系里各条线索里最靠前的那一步。 */
+  const leadAt = (system: SystemId): LeadStatus | null => {
+    const here = leads.filter((l) => LEADS[l.id].system === system).map((l) => l.status);
+    return here.includes('open') ? 'open' : here.includes('partial') ? 'partial' : here.length > 0 ? 'done' : null;
+  };
 
   const systems: SystemView[] = SYSTEM_IDS.map((id) => {
     const sys = SYSTEMS[id];
@@ -728,7 +745,7 @@ export function publicView(state: GameState): PublicView {
       current,
       canBuild: sys.arrayOutput > 0,
       arrays: state.arrays.filter((a) => a.system === id).length,
-      anomalyHint: cosmology >= B.research.cosmology.markMapAt ? sys.bodies.some((b) => b.anomaly) : null,
+      lead: leadAt(id),
       travel: current ? null : travel(state, id),
     };
   });
@@ -743,9 +760,8 @@ export function publicView(state: GameState): PublicView {
       scene: def.scene,
       wonder: def.wonder ? { name: def.wonder.name, basis: def.wonder.basis } : null,
       viewed: s.viewed,
-      surveyed: s.surveyed,
       given: s.name,
-      resource: s.surveyed ? harvestYield(def, s.harvested) : null,
+      resource: harvestYield(def, s.harvested),
       anomaly,
       harvested: s.harvested,
     };
@@ -797,6 +813,7 @@ export function publicView(state: GameState): PublicView {
     probes: state.probes.map((p) => ({ from: p.from, launchedYear: p.launchedYear, etaYear: p.etaYear, reported: p.reported })),
     pending: state.pending,
     rulings: { ...state.rulings },
+    leads,
     evidence: observe(state.truth, state.evidence, state.probes),
     eliminated: state.eliminated,
     board: { ...state.board },

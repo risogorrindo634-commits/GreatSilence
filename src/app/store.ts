@@ -7,7 +7,7 @@ import type { Action, Cost, GameState, PublicView, TruthId } from '../core/types
 import { IDLE_CAP_SECONDS, NO_ANSWERS, RECORD_KIND } from './record';
 import type { Answers, GameRecord } from './record';
 
-const SAVE_KEY = 'great-silence-save-v2';
+const SAVE_KEY = 'great-silence-save-v3';
 
 const IDLE_CAP_MS = IDLE_CAP_SECONDS * 1000;
 
@@ -66,7 +66,7 @@ function load(): SaveFile | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const file = JSON.parse(raw) as SaveFile;
-    return file.state?.version === 2 && Array.isArray(file.actions) ? file : null;
+    return file.state?.version === 3 && Array.isArray(file.actions) ? file : null;
   } catch {
     return null;
   }

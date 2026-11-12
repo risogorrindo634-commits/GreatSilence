@@ -5,13 +5,13 @@ import { AUGMENTS } from '../content/augments';
 import { BALANCE as B } from '../content/balance';
 import { COURT, COURT_IDS, FACTIONS, FACTION_IDS } from '../content/court';
 import type { CourtDef } from '../content/court';
-import { SYSTEMS } from '../content/systems';
+import { ARCHIVE, LEADS } from '../content/leads';
+import { PROBE_TARGET, START_SYSTEM, SYSTEMS, distance } from '../content/systems';
 import type { SystemId } from '../content/systems';
 import { RESPONSES, RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../content/truths';
 import type { ResponseId, TruthId } from '../content/truths';
-import type { Action, BodyView, EvidenceId, Observation, PublicView } from '../core/types';
+import type { Action, EvidenceId, LeadStatus, LeadView, Observation, PublicView } from '../core/types';
 import {
-  ANOMALY_NAMES,
   ENDING_NAMES,
   EVIDENCE_NAMES,
   EVIDENCE_SOURCES,
@@ -22,6 +22,7 @@ import {
   num,
   speedLabel,
 } from './labels';
+import { leadNote, nextStep, placeName } from './guide';
 import { AGAIN_NAMES, recordSummary } from './record';
 import type { Scribe } from './scribe';
 import type { Store } from './store';
@@ -114,103 +115,185 @@ function hint(ctx: Ctx): string {
   const view = ctx.store.view();
   let text: string | null = null;
   if (view.pending) {
-    if (ctx.ui.tab !== 'court') text = '朝堂上有一件事等你裁决。裁决之前不能启航。';
+    // 读数栏下面的“下一步”已经在说这件事。
   } else if (view.systems.filter((s) => s.visited).length === 1 && view.year === 0) {
     const even = view.research.every((l) => Math.abs(l.share - 0.25) < 1e-6);
-    if (view.album.length === 0) text = '先看一眼。在图上点一个天体，去看看它。观景花 2 个清醒日，这件事只有你能做。';
-    else if (view.arrays === 0) text = '建第一座采能阵列。亲自点火花的是你的清醒日，交给 AI 花的是世界年。这是你一路上都要做的取舍。';
+    if (view.arrays === 0) text = '先建一座采能阵列，路上的能源靠它。亲手点火花的是你的清醒日，交给 AI 花的是世界年。这是你一路上都要做的取舍。';
     else if (even && !ctx.ui.sawResearch) text = '去“科研”分配算力。路上的几十上百年里，AI 按你的分配做研究。';
-    else text = '去“星图”选下一站，启航。';
   } else if (view.evidence.length > 0 && Object.keys(view.board).length === 0 && ctx.ui.tab !== 'board') {
     text = '你取得了证据。去“推理”自己看：系统只说这是什么数据，不说它意味着什么。';
   }
   return text ? `<p class="hint">${text}</p>` : '';
 }
 
-// ---------------------------------------------------------------- 星系
-
-function bodyCard(ctx: Ctx, body: BodyView): string {
-  const title = body.given ? `${escapeHtml(body.given)}<small>${body.name}</small>` : body.name;
-  const rows: string[] = [];
-
-  if (!body.viewed) {
-    rows.push(`<div class="row"><h4>观景</h4><p>只有人会去做的事，AI 不能代劳。</p><div class="pair">${act(ctx, '去看一眼', { type: 'view', body: body.id }, { tone: 'self' })}</div></div>`);
-  } else {
-    rows.push(`<div class="row"><h4>观景</h4><p>${body.scene}</p><div class="pair">${ui('再看一次', 'scene', body.id)}</div></div>`);
-  }
-
-  if (!body.surveyed) {
-    rows.push(
-      `<div class="row"><h4>勘察</h4><p>查明这里的资源，以及有没有异常。</p><div class="pair">${act(ctx, '亲自勘察这里', { type: 'survey', mode: 'self', body: body.id }, { tone: 'self' })}${act(ctx, 'AI 勘察整个星系', { type: 'survey', mode: 'ai' }, { tone: 'ai' })}</div></div>`,
-    );
-  }
-
-  if (body.anomaly === 'signal') {
-    rows.push(
-      `<div class="row anomaly"><h4>异常：${ANOMALY_NAMES.signal}</h4><p>把它从噪声里调出来。调得越准，读到的越清楚。</p><div class="pair">${act(ctx, '亲手调谐', { type: 'tune', mode: 'self', body: body.id, skill: 0 }, { tone: 'self', game: 'tune' })}${act(ctx, 'AI 调谐', { type: 'tune', mode: 'ai', body: body.id }, { tone: 'ai', gain: '结果较模糊' })}</div></div>`,
-    );
-  } else if (body.anomaly) {
-    rows.push(
-      `<div class="row anomaly"><h4>异常：${ANOMALY_NAMES[body.anomaly]}</h4><p>亲自调查得到细的结果。交给 AI 只得到粗的。</p><div class="pair">${act(ctx, '亲自调查', { type: 'investigate', mode: 'self', body: body.id }, { tone: 'self' })}${act(ctx, '交给 AI', { type: 'investigate', mode: 'ai', body: body.id }, { tone: 'ai', gain: '结果较粗' })}</div></div>`,
-    );
-  }
-
-  const gain = body.resource === null ? '能源未知' : `+${body.resource} 能源`;
-  rows.push(
-    `<div class="row"><h4>采集</h4><p>${body.resource === null ? '勘察之后才知道这里有多少。' : `这一次能得到 ${body.resource} 能源。每采一次，下一次减半，减到四分之一为止。`}</p><div class="pair">${act(ctx, '亲自采集', { type: 'harvest', mode: 'self', body: body.id }, { tone: 'self', gain })}${act(ctx, '交给 AI', { type: 'harvest', mode: 'ai', body: body.id }, { tone: 'ai', gain })}</div></div>`,
-  );
-
-  return `<section class="card"><h3>${title}</h3>${rows.join('')}</section>`;
+/** 读数栏下面的“下一步”。点它去该去的地方。 */
+export function nextLine(view: PublicView): string {
+  const text = nextStep(view);
+  return text ? `<button class="next" data-ui="next"><b>下一步</b>${escapeHtml(text)}</button>` : '';
 }
 
-export function systemScreen(ctx: Ctx): string {
+// ---------------------------------------------------------------- 星系
+
+const LEAD_MARKS: Record<LeadStatus, string> = { open: '还没查', partial: '还能更细', done: '已取得' };
+
+/** 一条线索在它所在的星系里：说明，加上能做的事。 */
+function leadRow(ctx: Ctx, lead: LeadView): string {
+  const def = LEADS[lead.id];
+  const body = def.body;
+  let actions = '';
+  if (body && (def.evidence === 'signal' || def.evidence === 'pulsar')) {
+    actions = `${act(ctx, '亲手调谐', { type: 'tune', mode: 'self', body, skill: 0 }, { tone: 'self', game: 'tune' })}${act(ctx, 'AI 调谐', { type: 'tune', mode: 'ai', body }, { tone: 'ai', gain: '结果较模糊' })}`;
+  } else if (body) {
+    actions = `${act(ctx, '亲自调查', { type: 'investigate', mode: 'self', body }, { tone: 'self', gain: '结果细' })}${act(ctx, '交给 AI', { type: 'investigate', mode: 'ai', body }, { tone: 'ai', gain: '结果较粗' })}`;
+  }
+  const how =
+    def.evidence === 'signal' || def.evidence === 'pulsar'
+      ? '把它从噪声里调出来。调得越准，读到的越清楚。'
+      : '亲自调查得到细的结果，交给 AI 只得到粗的。';
+  return `
+    <div class="row lead ${lead.status}">
+      <h4>线索：${def.title}<small>${LEAD_MARKS[lead.status]}</small></h4>
+      <p>${def.text}</p>
+      <p class="note">${lead.status === 'done' ? leadNote(ctx.store.view(), lead) : how}</p>
+      ${lead.status === 'done' ? '' : `<div class="pair">${actions}</div>`}
+    </div>`;
+}
+
+function eventCard(ctx: Ctx): string {
   const view = ctx.store.view();
   const here = view.systems.find((s) => s.current)!;
-  const body = view.bodies.find((b) => b.id === ctx.ui.body) ?? null;
+  const leads = view.leads.filter((l) => LEADS[l.id].system === here.id);
+  const rows = leads.map((l) => leadRow(ctx, l));
 
-  const systemActions = `
-    <section class="card">
-      <h3>${here.code === here.name ? here.name : `${here.code} ${here.name}`}<small>${here.starLabel}</small></h3>
+  if (view.pending) {
+    const item = COURT[view.pending];
+    rows.push(`
+      <div class="row lead open">
+        <h4>朝堂：${item.title}</h4>
+        <p>${item.proposerName}提请裁决。裁决之前不能启航。</p>
+        <div class="pair">${ui('去朝堂', 'tab', 'court')}</div>
+      </div>`);
+  }
+  if (here.id === START_SYSTEM) rows.unshift(`<p>${ARCHIVE}</p><p class="note">出发前整理出的线索都在别处，列在“星图”里。</p>`);
+  else if (rows.length === 0) rows.push('<p class="note">这里没有线索。可以补给，看看风景，然后去下一站。</p>');
+
+  return `
+    <section class="card event">
+      <h3>${placeName(here.id)}<small>${here.starLabel}</small></h3>
       <p>${here.role}</p>
+      ${rows.join('')}
+    </section>`;
+}
+
+/** 有奇观的天体才值得专门去看；别的天体只是补给的来源。 */
+function sceneryCard(ctx: Ctx): string {
+  const wonders = ctx.store.view().bodies.filter((b) => b.wonder);
+  if (wonders.length === 0) return '';
+  const rows = wonders.map((b) => {
+    const name = b.given ? `${escapeHtml(b.given)}<small>${b.name}</small>` : b.wonder!.name === b.name ? b.name : `${b.name}<small>${b.wonder!.name}</small>`;
+    const button = b.viewed ? ui('再看一次', 'scene', b.id) : act(ctx, '去看一眼', { type: 'view', body: b.id }, { tone: 'self' });
+    return `<div class="row"><h4>${name}</h4><p>${b.viewed ? b.scene : '只有人会去做的事，AI 不能代劳。'}</p><div class="pair">${button}</div></div>`;
+  });
+  return `<section class="card"><h3>风景</h3>${rows.join('')}</section>`;
+}
+
+function supplyCard(ctx: Ctx): string {
+  const view = ctx.store.view();
+  const here = view.systems.find((s) => s.current)!;
+  // 总是去现在最多的那一处采。
+  const best = [...view.bodies].sort((a, b) => b.resource - a.resource)[0]!;
+  const gain = `+${best.resource} 能源`;
+  const build = here.canBuild
+    ? `<div class="pair">
+        ${act(ctx, '亲手点火', { type: 'build', mode: 'self', skill: 0 }, { tone: 'self', game: 'ignite' })}
+        ${act(ctx, '交给 AI', { type: 'build', mode: 'ai' }, { tone: 'ai' })}
+      </div>`
+    : '<p class="note">这里没有恒星，不能建阵列。</p>';
+  return `
+    <section class="card">
+      <h3>补给<small>能源 ${num(view.energy)} · 每年收入 ${num(view.incomePerYear, 2)}</small></h3>
       <div class="row">
-        <h4>采能阵列 <small>这里已有 ${here.arrays} 座，最多 ${B.build.maxPerSystem} 座；每年收入 ${num(view.incomePerYear, 2)}</small></h4>
-        <div class="pair">
-          ${act(ctx, '亲手点火', { type: 'build', mode: 'self', skill: 0 }, { tone: 'self', game: 'ignite' })}
-          ${act(ctx, '交给 AI', { type: 'build', mode: 'ai' }, { tone: 'ai' })}
-        </div>
+        <h4>采集<small>${escapeHtml(best.given ?? best.name)}，这一次 ${gain}</small></h4>
+        <p>总是挑现在能源最多的一处。同一处每采一次，下一次减半，减到四分之一为止。</p>
+        <div class="pair">${act(ctx, '亲自采集', { type: 'harvest', mode: 'self', body: best.id }, { tone: 'self', gain })}${act(ctx, '交给 AI', { type: 'harvest', mode: 'ai', body: best.id }, { tone: 'ai', gain })}</div>
       </div>
       <div class="row">
-        <h4>探测器 <small>派往 K-41，旧信号的来源</small></h4>
+        <h4>采能阵列<small>这里 ${here.arrays} / ${B.build.maxPerSystem} 座，一路上共 ${view.arrays} 座</small></h4>
+        <p>建好之后年年有收入，但它也会被看见。</p>
+        ${build}
+      </div>
+    </section>`;
+}
+
+function farCard(ctx: Ctx): string {
+  const view = ctx.store.view();
+  const flying = view.probes.filter((p) => !p.reported);
+  return `
+    <section class="card">
+      <h3>探测器与等待</h3>
+      <div class="row">
+        <h4>探测器<small>派往 K-41，这里离它 ${distance(SYSTEMS[view.location].pos, PROBE_TARGET.pos)} 光年</small></h4>
         <p>它刹不住车，只能高速掠过。你能知道的是它到了没有；没到的话，是在哪里没了声音。</p>
         <div class="pair">${act(ctx, '发射探测器', { type: 'probe' }, { gain: '之后要等回音' })}</div>
-        ${view.probes.filter((p) => !p.reported).map((p) => `<p class="note">在途：一切顺利的话，第 ${p.etaYear} 年有回音。</p>`).join('')}
+        ${flying.map((p) => `<p class="note">在途：一切顺利的话，第 ${p.etaYear} 年有回音。</p>`).join('')}
       </div>
       <div class="row">
-        <h4>冷眠等待 <small>世界照常运转，你不花清醒日</small></h4>
+        <h4>冷眠等待<small>世界照常运转，你不花清醒日</small></h4>
         <div class="pair">
           ${act(ctx, '等 10 年', { type: 'wait', years: 10 }, { tone: 'ai' })}
           ${act(ctx, '等 50 年', { type: 'wait', years: 50 }, { tone: 'ai' })}
         </div>
       </div>
     </section>`;
+}
 
+/** 在星系图上点一个天体，下面说一句它是什么。 */
+function bodyCaption(ctx: Ctx): string {
+  const view = ctx.store.view();
+  const body = view.bodies.find((b) => b.id === ctx.ui.body);
+  if (!body) return '<p class="caption">点一个天体，看它是什么。虚线圈出的是线索指到的地方。</p>';
+  const lead = view.leads.find((l) => LEADS[l.id].body === body.id);
+  const parts = [`${escapeHtml(body.given ?? body.name)}：`];
+  if (lead) parts.push(`线索“${LEADS[lead.id].title}”。`);
+  if (body.wonder) parts.push(`${body.wonder.name}，${body.viewed ? '你看过了' : '值得去看一眼'}。`);
+  parts.push(`采集这一次可得 ${body.resource} 能源。`);
+  return `<p class="caption">${parts.join('')}</p>`;
+}
+
+export function systemScreen(ctx: Ctx): string {
   return `
     ${hint(ctx)}
     <canvas class="view" data-draw="system"></canvas>
-    <div class="chips">${view.bodies
-      .map((b) => `<button data-ui="body" data-arg="${b.id}" class="${b.id === ctx.ui.body ? 'on' : ''} ${b.anomaly ? 'flag' : ''}">${escapeHtml(b.given ?? b.name)}</button>`)
-      .join('')}</div>
-    <p class="caption">点一个天体。黄色表示那里有已知的异常。</p>
-    ${body ? bodyCard(ctx, body) : ''}
-    ${systemActions}`;
+    ${bodyCaption(ctx)}
+    ${eventCard(ctx)}
+    ${sceneryCard(ctx)}
+    ${supplyCard(ctx)}
+    ${farCard(ctx)}`;
 }
 
 // ---------------------------------------------------------------- 星图
 
+function leadsCard(ctx: Ctx): string {
+  const view = ctx.store.view();
+  const rows = view.leads
+    .map((lead) => {
+      const def = LEADS[lead.id];
+      const where = def.system ? placeName(def.system) : 'K-41';
+      return `
+        <li class="lead ${lead.status}">
+          <b>${def.title}</b><small>${where} · ${LEAD_MARKS[lead.status]}</small>
+          <p>${def.text}</p>
+          <p class="note">${leadNote(view, lead)}</p>
+        </li>`;
+    })
+    .join('');
+  return `<section class="card"><h3>线索<small>${view.leads.filter((l) => l.status === 'done').length} / ${view.leads.length} 已取得</small></h3><ul class="plain leads">${rows}</ul></section>`;
+}
+
 export function mapScreen(ctx: Ctx): string {
   const view = ctx.store.view();
   const dest = view.systems.find((s) => s.id === ctx.ui.dest && !s.current) ?? null;
-  let card = '<p class="caption">点一颗恒星，看去那里要花什么。</p>';
+  let card = '<p class="caption">点一颗恒星，看去那里要花什么。黄色方块是还没去的线索。</p>';
 
   if (dest?.travel) {
     const t = dest.travel;
@@ -219,10 +302,15 @@ export function mapScreen(ctx: Ctx): string {
         ? `<p class="note">弹弓还没做。启航时 AI 会按保守方案做，加速 ${Math.round(B.slingshot.ai * SYSTEMS[view.location].slingshot * 100)}%。</p>
            <div class="pair">${act(ctx, '亲手做弹弓', { type: 'slingshot', skill: 0 }, { tone: 'self', game: 'slingshot' })}</div>`
         : `<p class="note">弹弓已就绪：下一程加速 ${Math.round(view.slingshot * 100)}%。</p>`;
+    const leadsThere = view.leads.filter((l) => LEADS[l.id].system === dest.id);
+    const there = leadsThere.length
+      ? leadsThere.map((l) => `<p class="note">线索：${LEADS[l.id].title}（${LEAD_MARKS[l.status]}）</p>`).join('')
+      : '<p class="note">那里没有已知的线索。</p>';
     card = `
       <section class="card">
-        <h3>${dest.code === dest.name ? dest.name : `${dest.code} ${dest.name}`}<small>${dest.starLabel}${dest.visited ? ' · 去过' : ''}</small></h3>
+        <h3>${placeName(dest.id)}<small>${dest.starLabel}${dest.visited ? ' · 去过' : ''}</small></h3>
         <p>${dest.role}</p>
+        ${there}
         <dl class="facts">
           <div><dt>距离</dt><dd>${t.distance} 光年</dd></div>
           <div><dt>航速</dt><dd>${speedLabel(t.speed)}</dd></div>
@@ -236,12 +324,12 @@ export function mapScreen(ctx: Ctx): string {
 
   return `
     ${hint(ctx)}
+    ${leadsCard(ctx)}
     <canvas class="view map" data-draw="map"></canvas>
     <div class="chips">${view.systems
       .filter((s) => !s.current)
-      .map((s) => `<button data-ui="dest" data-arg="${s.id}" class="${s.id === ctx.ui.dest ? 'on' : ''} ${s.anomalyHint ? 'flag' : ''}">${s.code === s.name ? s.name : `${s.code} ${s.name}`}</button>`)
+      .map((s) => `<button data-ui="dest" data-arg="${s.id}" class="${s.id === ctx.ui.dest ? 'on' : ''} ${s.lead === 'open' ? 'flag' : ''}">${placeName(s.id)}</button>`)
       .join('')}</div>
-    ${view.research.find((l) => l.id === 'cosmology')!.level >= B.research.cosmology.markMapAt ? '<p class="caption">黄色方块：宇宙规律研究标出那里有值得调查的东西。</p>' : ''}
     ${card}`;
 }
 
