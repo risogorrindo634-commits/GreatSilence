@@ -1,5 +1,6 @@
 import { BALANCE as B } from '../src/content/balance';
 import { COURT } from '../src/content/court';
+import { RELIC_IDS } from '../src/content/relics';
 import { SYSTEMS, SYSTEM_IDS } from '../src/content/systems';
 import type { SystemId } from '../src/content/systems';
 import { RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../src/content/truths';
@@ -116,6 +117,10 @@ export function candidates(state: GameState): Action[] {
     out.push({ type: 'tune', mode: 'ai', body: body.id });
     out.push({ type: 'harvest', mode: 'self', body: body.id });
     out.push({ type: 'harvest', mode: 'ai', body: body.id });
+  }
+  for (const relic of RELIC_IDS) {
+    out.push({ type: 'salvage', mode: 'self', relic });
+    out.push({ type: 'salvage', mode: 'ai', relic });
   }
   out.push({ type: 'build', mode: 'self', skill: 0.5 });
   out.push({ type: 'build', mode: 'ai' });

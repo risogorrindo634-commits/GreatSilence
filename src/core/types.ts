@@ -1,9 +1,10 @@
 import type { CourtId, FactionId } from '../content/court';
 import type { LeadId } from '../content/leads';
+import type { RelicId } from '../content/relics';
 import type { AnomalyKind, BodyKind, StarKind, SystemId } from '../content/systems';
 import type { ResponseId, TruthId } from '../content/truths';
 
-export type { CourtId, FactionId, LeadId, SystemId, TruthId, ResponseId };
+export type { CourtId, FactionId, LeadId, RelicId, SystemId, TruthId, ResponseId };
 
 export type Mode = 'self' | 'ai';
 export type LineId = 'propulsion' | 'longevity' | 'harvest' | 'cosmology';
@@ -80,6 +81,7 @@ export type LogEvent =
   | { t: 'view'; body: string }
   | { t: 'name'; body: string; name: string }
   | { t: 'lead'; lead: LeadId }
+  | { t: 'salvage'; mode: Mode; relic: RelicId }
   | { t: 'investigate'; mode: Mode; body: string; evidence: EvidenceId }
   | { t: 'tune'; mode: Mode; body: string; evidence: EvidenceId; clarity: number }
   | { t: 'harvest'; mode: Mode; body: string; energy: number }
@@ -103,7 +105,7 @@ export type LogEntry = LogEvent & { year: number };
  * 真相在这里，界面拿不到这个对象，只拿得到 PublicView。
  */
 export interface GameState {
-  version: 3;
+  version: 4;
   seed: number;
   rng: number;
   truth: TruthId;
@@ -121,6 +123,8 @@ export interface GameState {
   visited: SystemId[];
   /** 已经出现的线索，按出现的先后。 */
   leads: LeadId[];
+  /** 取走的遗物，以及是谁取的。 */
+  relics: Partial<Record<RelicId, Mode>>;
   /** 为下一程准备好的弹弓加速；null 表示还没做，启航时由 AI 按保守方案做。 */
   slingshot: number | null;
 
@@ -163,6 +167,8 @@ export type Action =
   | { type: 'view'; body: string }
   | { type: 'name'; body: string; name: string }
   | { type: 'investigate'; mode: Mode; body: string }
+  /** 取一件遗物。 */
+  | { type: 'salvage'; mode: Mode; relic: RelicId }
   /** skill 是界面里小操作的成绩，0 到 1。 */
   | { type: 'tune'; mode: 'self'; body: string; skill: number }
   | { type: 'tune'; mode: 'ai'; body: string }
@@ -279,6 +285,8 @@ export interface SystemView {
   arrays: number;
   /** 这里的线索进展到哪一步；这里没有已出现的线索是 null。 */
   lead: LeadStatus | null;
+  /** 这里有已知的、还没取走的遗物。 */
+  relic: boolean;
   /** 从当前位置去那里要花什么；当前所在的星系是 null。 */
   travel: { distance: number; speed: number; years: number; energy: number } | null;
 }
@@ -346,6 +354,8 @@ export interface PublicView {
 
   /** 已经出现的线索。文字在 content/leads.ts。 */
   leads: LeadView[];
+  /** 已知的遗物，和谁取走了它；还没取是 null。文字在 content/relics.ts。 */
+  relics: { id: RelicId; taken: Mode | null }[];
   evidence: Observation[];
   eliminated: TruthId | null;
   board: Record<string, Mark>;

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { COURT, COURT_IDS } from '../src/content/court';
+import { RELICS } from '../src/content/relics';
 import { SYSTEMS } from '../src/content/systems';
 import type { SystemId } from '../src/content/systems';
 import { RESPONSE_IDS, TRUTHS } from '../src/content/truths';
@@ -745,6 +746,47 @@ describe('线索', () => {
     expect([lead(s, 'home'), lead(s, 'g2'), lead(s, 'm7'), lead(s, 'r3'), lead(s, 'p12')]).toEqual([null, null, 'open', 'open', null]);
     s = play(fly(s, 'm7'), { type: 'investigate', mode: 'ai', body: 'm7-1' });
     expect([lead(s, 'm7'), lead(s, 'p12')]).toEqual(['partial', 'open']);
+  });
+});
+
+describe('遗物', () => {
+  it('故乡的遗物开局就知道，双日的储能站在档案里，别处的要到了才知道', () => {
+    const s = createGame(SEED);
+    expect(publicView(s).relics.map((r) => r.id)).toEqual(['archive', 'depot']);
+    expect(publicView(s).systems.filter((v) => v.relic).map((v) => v.id)).toEqual(['home', 'g2']);
+    expect(can(s, { type: 'salvage', mode: 'self', relic: 'depot' })).toBe('它不在这个星系。');
+    const m7 = play(rich(s), { type: 'depart', to: 'm7' });
+    expect(publicView(m7).relics.map((r) => r.id)).toEqual(['archive', 'depot', 'miner', 'relay']);
+  });
+
+  it('亲自去取花清醒日，得到全部；交给 AI 花世界年，只得一半；取过就没了', () => {
+    const s = play(rich(createGame(SEED)), { type: 'depart', to: 'g2' });
+    const g2 = s.pending ? play(s, { type: 'rule', item: s.pending, decision: 'veto' }) : s;
+    const self = reduce(g2, { type: 'salvage', mode: 'self', relic: 'depot' });
+    expect([self.year - g2.year, g2.wakeDays - self.wakeDays, self.energy - g2.energy]).toEqual([0, RELICS.depot.days, RELICS.depot.reward.energy]);
+    expect(self.authority - g2.authority).toBeCloseTo(B.authority.perSelfAction, 6);
+    const ai = reduce(g2, { type: 'salvage', mode: 'ai', relic: 'depot' });
+    expect([ai.year - g2.year, ai.wakeDays - g2.wakeDays]).toEqual([B.salvage.years, 0]);
+    expect(ai.energy - g2.energy).toBeGreaterThanOrEqual(RELICS.depot.reward.energy! * B.salvage.aiShare);
+    expect(can(self, { type: 'salvage', mode: 'ai', relic: 'depot' })).toBe('已经取走了。');
+    expect(publicView(self).relics.find((r) => r.id === 'depot')!.taken).toBe('self');
+  });
+
+  it('研究资料加到对应的科研线上', () => {
+    const s = createGame(SEED);
+    const a = reduce(s, { type: 'salvage', mode: 'self', relic: 'archive' });
+    expect(a.research.points.longevity - s.research.points.longevity).toBe(40);
+    const b = reduce(s, { type: 'salvage', mode: 'ai', relic: 'archive' });
+    expect(b.research.points.longevity - s.research.points.longevity).toBeGreaterThanOrEqual(20);
+  });
+
+  it('遗物在三种真相下一模一样：视图相同', () => {
+    const views = ALL_TRUTHS.map((t) => {
+      const s = play(rich(createGame(SEED, t)), { type: 'salvage', mode: 'self', relic: 'archive' });
+      return publicView(s).relics;
+    });
+    expect(views[1]).toEqual(views[0]);
+    expect(views[2]).toEqual(views[0]);
   });
 });
 

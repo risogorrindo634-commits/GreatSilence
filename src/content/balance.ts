@@ -35,6 +35,8 @@ export const BALANCE = {
   view: { days: 2 },
   /** 亲自调查的天数随异常而定，见 systems.ts。 */
   investigate: { years: 60 },
+  /** 遗物：亲自去取的天数见 relics.ts；交给 AI 花这么多年，只得到这一份收获。 */
+  salvage: { years: 20, aiShare: 0.5 },
   /** 每采一次，下一次减半，减到原来的四分之一为止。 */
   harvest: { days: 6, years: 20, repeatFactor: 0.5, floor: 0.25 },
   build: {

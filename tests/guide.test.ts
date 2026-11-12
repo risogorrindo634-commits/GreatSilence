@@ -26,6 +26,12 @@ function follow(state: GameState, steps = 200): { state: GameState; said: string
         action = def.evidence === 'signal' || def.evidence === 'pulsar' ? { type: 'tune', mode: 'ai', body: def.body! } : { type: 'investigate', mode: 'ai', body: def.body! };
         break;
       }
+      case 'relic':
+        action = { type: 'salvage', mode: 'ai', relic: next.relic };
+        break;
+      case 'detour':
+        action = { type: 'depart', to: next.to };
+        break;
       case 'probe':
         action = next.short > 0 ? harvest : { type: 'probe' };
         break;
@@ -49,11 +55,16 @@ function follow(state: GameState, steps = 200): { state: GameState; said: string
 }
 
 describe('下一步', () => {
-  it('开局指向最近的一条线索，能源不够时先说补给', () => {
-    const view = publicView(createGame(1));
-    expect(nextTarget(view)).toMatchObject({ kind: 'travel', to: 'm7', lead: 'ruins' });
-    expect(nextStep(view)).toMatch(/去 M-7 晨昏.*还差 \d+：先补给/);
-    expect(nextTarget(publicView(rich(createGame(1))))).toMatchObject({ kind: 'travel', short: 0 });
+  it('开局先看故乡的遗物，再指向最近的线索；能源不够时建议绕去储能站，或者先补给', () => {
+    const start = createGame(1);
+    expect(nextTarget(publicView(start))).toEqual({ kind: 'relic', relic: 'archive' });
+    const s = reduce(start, { type: 'salvage', mode: 'ai', relic: 'archive' });
+    expect(nextTarget(publicView(s))).toMatchObject({ kind: 'detour', to: 'g2', relic: 'depot', target: 'm7' });
+    expect(nextStep(publicView(s))).toMatch(/能源不够直接去 M-7 晨昏.*G-2 双日有“别人的储能站”/);
+    expect(nextTarget(publicView(rich(s)))).toMatchObject({ kind: 'travel', to: 'm7', lead: 'ruins', short: 0 });
+
+    const taken = { ...s, relics: { ...s.relics, depot: 'ai' as const } };
+    expect(nextStep(publicView(taken))).toMatch(/去 M-7 晨昏.*还差 \d+：先补给/);
   });
 
   it('到了有线索的地方，就说这里有线索', () => {

@@ -6,11 +6,12 @@ import { BALANCE as B } from '../content/balance';
 import { COURT, COURT_IDS, FACTIONS, FACTION_IDS } from '../content/court';
 import type { CourtDef } from '../content/court';
 import { ARCHIVE, LEADS } from '../content/leads';
+import { RELICS } from '../content/relics';
 import { PROBE_TARGET, START_SYSTEM, SYSTEMS, distance } from '../content/systems';
 import type { SystemId } from '../content/systems';
 import { RESPONSES, RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../content/truths';
 import type { ResponseId, TruthId } from '../content/truths';
-import type { Action, EvidenceId, LeadStatus, LeadView, Observation, PublicView } from '../core/types';
+import type { Action, EvidenceId, LeadStatus, LeadView, Observation, PublicView, RelicId } from '../core/types';
 import {
   ENDING_NAMES,
   EVIDENCE_NAMES,
@@ -159,11 +160,38 @@ function leadRow(ctx: Ctx, lead: LeadView): string {
     </div>`;
 }
 
+function rewardLabel(id: RelicId): string {
+  const r = RELICS[id].reward;
+  if (r.energy) return `能源 +${r.energy}`;
+  if (r.research) return `${LINE_NAMES[r.research.line]}科研 +${r.research.points} 点`;
+  return '';
+}
+
+/** 一件遗物：没取时是一句话和两个按钮，取了之后是读到的记录。 */
+function relicRow(ctx: Ctx, id: RelicId, taken: 'self' | 'ai' | null): string {
+  const def = RELICS[id];
+  if (taken) {
+    const text = taken === 'self' ? def.fine.map((l) => `<p>${l}</p>`).join('') : `<p>${def.coarse}</p><p class="note">亲自去取才读得到完整的记录。</p>`;
+    return `<div class="row relic done"><h4>遗物：${def.title}<small>${taken === 'self' ? '你亲自取回' : 'AI 取回，只取出一半'}</small></h4>${text}</div>`;
+  }
+  const half = `${rewardLabel(id).replace(/\d+/, (n) => String(Math.round(Number(n) * B.salvage.aiShare)))}`;
+  return `
+    <div class="row relic">
+      <h4>遗物：${def.title}</h4>
+      <p>${def.seen}</p>
+      <div class="pair">
+        ${act(ctx, '亲自去取', { type: 'salvage', mode: 'self', relic: id }, { tone: 'self', gain: rewardLabel(id) })}
+        ${act(ctx, '交给 AI', { type: 'salvage', mode: 'ai', relic: id }, { tone: 'ai', gain: half })}
+      </div>
+    </div>`;
+}
+
 function eventCard(ctx: Ctx): string {
   const view = ctx.store.view();
   const here = view.systems.find((s) => s.current)!;
   const leads = view.leads.filter((l) => LEADS[l.id].system === here.id);
   const rows = leads.map((l) => leadRow(ctx, l));
+  for (const r of view.relics) if (RELICS[r.id].system === here.id) rows.push(relicRow(ctx, r.id, r.taken));
 
   if (view.pending) {
     const item = COURT[view.pending];
@@ -253,8 +281,10 @@ function bodyCaption(ctx: Ctx): string {
   const body = view.bodies.find((b) => b.id === ctx.ui.body);
   if (!body) return '<p class="caption">点一个天体，看它是什么。虚线圈出的是线索指到的地方。</p>';
   const lead = view.leads.find((l) => LEADS[l.id].body === body.id);
+  const relic = view.relics.find((r) => RELICS[r.id].body === body.id);
   const parts = [`${escapeHtml(body.given ?? body.name)}：`];
   if (lead) parts.push(`线索“${LEADS[lead.id].title}”。`);
+  if (relic) parts.push(`遗物“${RELICS[relic.id].title}”${relic.taken ? '，已取回' : ''}。`);
   if (body.wonder) parts.push(`${body.wonder.name}，${body.viewed ? '你看过了' : '值得去看一眼'}。`);
   parts.push(`采集这一次可得 ${body.resource} 能源。`);
   return `<p class="caption">${parts.join('')}</p>`;
@@ -293,7 +323,7 @@ function leadsCard(ctx: Ctx): string {
 export function mapScreen(ctx: Ctx): string {
   const view = ctx.store.view();
   const dest = view.systems.find((s) => s.id === ctx.ui.dest && !s.current) ?? null;
-  let card = '<p class="caption">点一颗恒星，看去那里要花什么。黄色方块是还没去的线索。</p>';
+  let card = '<p class="caption">点一颗恒星，看去那里要花什么。黄色方块是还没查的线索，青色圆点是知道的遗物。</p>';
 
   if (dest?.travel) {
     const t = dest.travel;
@@ -303,9 +333,12 @@ export function mapScreen(ctx: Ctx): string {
            <div class="pair">${act(ctx, '亲手做弹弓', { type: 'slingshot', skill: 0 }, { tone: 'self', game: 'slingshot' })}</div>`
         : `<p class="note">弹弓已就绪：下一程加速 ${Math.round(view.slingshot * 100)}%。</p>`;
     const leadsThere = view.leads.filter((l) => LEADS[l.id].system === dest.id);
-    const there = leadsThere.length
-      ? leadsThere.map((l) => `<p class="note">线索：${LEADS[l.id].title}（${LEAD_MARKS[l.status]}）</p>`).join('')
-      : '<p class="note">那里没有已知的线索。</p>';
+    const relicsThere = view.relics.filter((r) => RELICS[r.id].system === dest.id && !r.taken);
+    const notes = [
+      ...leadsThere.map((l) => `<p class="note">线索：${LEADS[l.id].title}（${LEAD_MARKS[l.status]}）</p>`),
+      ...relicsThere.map((r) => `<p class="note">遗物：${RELICS[r.id].title}（${rewardLabel(r.id)}）</p>`),
+    ];
+    const there = notes.length ? notes.join('') : '<p class="note">那里没有已知的线索。</p>';
     card = `
       <section class="card">
         <h3>${placeName(dest.id)}<small>${dest.starLabel}${dest.visited ? ' · 去过' : ''}</small></h3>
@@ -529,6 +562,11 @@ export function recordScreen(ctx: Ctx): string {
         .join('')}</div>`
     : '<p>还没有存下风景。去看一个天体，它就会留在这里。</p>';
 
+  const taken = view.relics.filter((r) => r.taken);
+  const relics = taken.length
+    ? taken.map((r) => relicRow(ctx, r.id, r.taken)).join('')
+    : '<p>还没有取回遗物。沿途有些天体上留着东西，到了那里会在星系画面里列出来。</p>';
+
   const log = [...view.log]
     .reverse()
     .map((e) => `<li><time>第 ${e.year} 年</time>${escapeHtml(ctx.scribe.logLine(e))}</li>`)
@@ -536,6 +574,7 @@ export function recordScreen(ctx: Ctx): string {
 
   return `
     <section class="card"><h3>相册<small>${view.album.length} 处</small></h3>${album}</section>
+    <section class="card"><h3>遗物<small>${taken.length} 件</small></h3>${relics}</section>
     <section class="card"><h3>航行日志</h3><ol class="log">${log}</ol></section>
     <section class="card">
       <h3>这一局</h3>

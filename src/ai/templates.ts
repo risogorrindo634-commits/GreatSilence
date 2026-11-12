@@ -7,6 +7,7 @@ import type { Scribe } from '../app/scribe';
 import { AUGMENTS } from '../content/augments';
 import { COURT, FACTIONS } from '../content/court';
 import { LEADS } from '../content/leads';
+import { RELICS } from '../content/relics';
 import { SYSTEMS, findBody } from '../content/systems';
 import { RESPONSES, TRUTHS } from '../content/truths';
 import type { CourtId, EndingId, EvidenceId, LineId, LogEntry, PublicView } from '../core/types';
@@ -48,6 +49,8 @@ function logLine(e: LogEntry): string {
       return `你去看了${bodyName(e.body)}。`;
     case 'name':
       return `你给${bodyName(e.body)}起名“${e.name}”。此后的文书沿用这个名字。`;
+    case 'salvage':
+      return e.mode === 'self' ? `你亲自取回了${RELICS[e.relic].title}。` : `AI 取回了${RELICS[e.relic].title}，只取出一半。`;
     case 'lead':
       return `线索：${LEADS[e.lead].title}。${LEADS[e.lead].text}`;
     case 'investigate':

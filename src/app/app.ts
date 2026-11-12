@@ -292,9 +292,9 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
       case 'next': {
         // 去“下一步”说的那个地方。
         const next = nextTarget(store.view());
-        const tab: Record<typeof next.kind, Tab> = { court: 'court', here: 'system', probe: 'system', travel: 'map', wait: 'system', refine: 'board', conclude: 'board', none: ui.tab };
+        const tab: Record<typeof next.kind, Tab> = { court: 'court', here: 'system', relic: 'system', probe: 'system', travel: 'map', detour: 'map', wait: 'system', refine: 'board', conclude: 'board', none: ui.tab };
         ui.tab = tab[next.kind];
-        if (next.kind === 'travel') ui.dest = next.to;
+        if (next.kind === 'travel' || next.kind === 'detour') ui.dest = next.to;
         delta = '';
         render();
         window.scrollTo(0, 0);

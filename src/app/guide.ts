@@ -4,9 +4,10 @@
  */
 import { BALANCE as B } from '../content/balance';
 import { LEADS } from '../content/leads';
+import { RELICS } from '../content/relics';
 import { PROBE_TARGET, SYSTEMS, distance } from '../content/systems';
 import type { SystemId } from '../content/systems';
-import type { LeadId, LeadView, PublicView } from '../core/types';
+import type { LeadId, LeadView, PublicView, RelicId } from '../core/types';
 
 /** 离 K-41 这么近，就建议在这里发射探测器。 */
 const PROBE_NEAR = 25;
@@ -24,6 +25,8 @@ export function gap(text: string): string {
 export type Next =
   | { kind: 'court' }
   | { kind: 'here'; lead: LeadId }
+  | { kind: 'relic'; relic: RelicId }
+  | { kind: 'detour'; to: SystemId; relic: RelicId; energy: number; target: SystemId; short: number }
   | { kind: 'probe'; distance: number; short: number }
   | { kind: 'travel'; to: SystemId; lead: LeadId; energy: number; short: number }
   | { kind: 'wait'; year: number }
@@ -38,6 +41,8 @@ export function nextTarget(view: PublicView): Next {
   const open = view.leads.filter((l) => l.status === 'open');
   const here = open.find((l) => LEADS[l.id].system === view.location);
   if (here) return { kind: 'here', lead: here.id };
+  const relic = view.relics.find((r) => !r.taken && RELICS[r.id].system === view.location);
+  if (relic) return { kind: 'relic', relic: relic.id };
 
   const toK41 = distance(SYSTEMS[view.location].pos, PROBE_TARGET.pos);
   const probeOpen = open.some((l) => l.id === 'probe');
@@ -51,7 +56,17 @@ export function nextTarget(view: PublicView): Next {
   const to = targets[0];
   if (to) {
     const lead = open.find((l) => LEADS[l.id].system === to.id)!;
-    return { kind: 'travel', to: to.id, lead: lead.id, energy: to.travel!.energy, short: Math.max(0, Math.ceil(to.travel!.energy - view.energy)) };
+    const short = Math.max(0, Math.ceil(to.travel!.energy - view.energy));
+    // 能源不够时，如果有一处知道的能源储备去得了，建议先绕过去。
+    if (short > 0) {
+      const cache = view.relics
+        .filter((r) => !r.taken && RELICS[r.id].reward.energy)
+        .map((r) => ({ r, sys: view.systems.find((s) => s.id === RELICS[r.id].system)! }))
+        .filter(({ sys }) => !sys.current && sys.travel && sys.travel.energy <= view.energy)
+        .sort((a, b) => a.sys.travel!.distance - b.sys.travel!.distance)[0];
+      if (cache) return { kind: 'detour', to: cache.sys.id, relic: cache.r.id, energy: cache.sys.travel!.energy, target: to.id, short };
+    }
+    return { kind: 'travel', to: to.id, lead: lead.id, energy: to.travel!.energy, short };
   }
 
   const flying = view.probes.filter((p) => !p.reported);
@@ -71,6 +86,10 @@ export function nextStep(view: PublicView): string {
       return '朝堂上有一件事等你裁决。裁决之前不能启航。';
     case 'here':
       return `这里有线索“${LEADS[next.lead].title}”：${LEADS[next.lead].task}。`;
+    case 'relic':
+      return `这里有遗物“${RELICS[next.relic].title}”。亲自去取能读到完整的记录。`;
+    case 'detour':
+      return `能源不够直接去${gap(placeName(next.target))}（还差 ${next.short}）。${placeName(next.to)}有“${RELICS[next.relic].title}”，路上只要 ${next.energy} 能源，可以先去那里补充。`;
     case 'probe':
       return next.short > 0
         ? `发射一艘探测器去 K-41。要 ${B.probe.energy} 能源，还差 ${next.short}：先补给。`

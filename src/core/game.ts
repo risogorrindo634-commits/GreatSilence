@@ -11,6 +11,8 @@ import { COURT, COURT_IDS, FACTION_IDS, courtAt } from '../content/court';
 import type { FactionId } from '../content/court';
 import { LEADS, LEAD_IDS } from '../content/leads';
 import type { LeadDef } from '../content/leads';
+import { RELICS, RELIC_IDS } from '../content/relics';
+import type { RelicDef } from '../content/relics';
 import { BODY_IDS, PROBE_TARGET, START_SYSTEM, SYSTEMS, SYSTEM_IDS, distance, findBody } from '../content/systems';
 import type { BodyDef, SystemId } from '../content/systems';
 import { RESPONSE_IDS, TRUTHS, TRUTH_IDS } from '../content/truths';
@@ -49,7 +51,7 @@ export function createGame(seed: number, truth?: TruthId): GameState {
   }
 
   const state: GameState = {
-    version: 3,
+    version: 4,
     seed,
     rng: radiusRoll.state,
     truth: picked,
@@ -62,6 +64,7 @@ export function createGame(seed: number, truth?: TruthId): GameState {
     location: START_SYSTEM,
     visited: [START_SYSTEM],
     leads: [],
+    relics: {},
     slingshot: null,
     delegatedYears: 0,
     sleptYears: 0,
@@ -230,6 +233,11 @@ function probeFailureRate(state: GameState): number {
   return level(state, 'cosmology') >= c.probeReliableAt ? c.reliableFailureRate : B.probe.failureRate;
 }
 
+/** 出发时档案里就有的，或者到过那个星系的。 */
+export function relicKnown(state: GameState, def: RelicDef): boolean {
+  return def.known === 'archive' || state.visited.includes(def.system);
+}
+
 function evidenceOf(def: BodyDef): EvidenceId | null {
   return def.anomaly ?? null;
 }
@@ -250,6 +258,11 @@ export function cost(state: GameState, action: Action): Cost {
     }
     case 'tune':
       return action.mode === 'self' ? { ...FREE, days: B.tune.days } : FREE;
+    case 'salvage': {
+      const def = RELICS[action.relic];
+      if (!def) return FREE;
+      return action.mode === 'self' ? { ...FREE, days: def.days } : { ...FREE, years: B.salvage.years };
+    }
     case 'harvest':
       return action.mode === 'self' ? { ...FREE, days: B.harvest.days } : { ...FREE, years: B.harvest.years };
     case 'build':
@@ -331,6 +344,13 @@ function canSpecific(state: GameState, action: Action): string | null {
       if (action.mode === 'self') return isSkill(action.skill) ? null : '技巧值要在 0 到 1 之间。';
       const have = state.evidence[id];
       if (have && have.clarity >= aiTuneClarity(state)) return '已经有一份不比这更差的结果。';
+      return null;
+    }
+    case 'salvage': {
+      const def = RELICS[action.relic];
+      if (!def || def.system !== state.location) return '它不在这个星系。';
+      if (!relicKnown(state, def)) return '还不知道它在这里。';
+      if (state.relics[action.relic]) return '已经取走了。';
       return null;
     }
     case 'harvest':
@@ -617,6 +637,17 @@ export function reduce(state: GameState, action: Action): GameState {
       record(d, { t: 'tune', mode: action.mode, body: action.body, evidence: id, clarity: best });
       break;
     }
+    case 'salvage': {
+      const def = RELICS[action.relic];
+      const share = action.mode === 'self' ? 1 : B.salvage.aiShare;
+      if (action.mode === 'self') spendDays(d, c.days, true);
+      else passYears(d, c.years, 'delegated');
+      d.relics[action.relic] = action.mode;
+      if (def.reward.energy) d.energy += Math.round(def.reward.energy * share);
+      if (def.reward.research) addPoints(d, def.reward.research.line, Math.round(def.reward.research.points * share));
+      record(d, { t: 'salvage', mode: action.mode, relic: action.relic });
+      break;
+    }
     case 'harvest': {
       const body = d.bodies[action.body]!;
       const gain = harvestYield(findBody(action.body)!.body, body.harvested);
@@ -746,6 +777,7 @@ export function publicView(state: GameState): PublicView {
       canBuild: sys.arrayOutput > 0,
       arrays: state.arrays.filter((a) => a.system === id).length,
       lead: leadAt(id),
+      relic: RELIC_IDS.some((r) => RELICS[r].system === id && relicKnown(state, RELICS[r]) && !state.relics[r]),
       travel: current ? null : travel(state, id),
     };
   });
@@ -814,6 +846,7 @@ export function publicView(state: GameState): PublicView {
     pending: state.pending,
     rulings: { ...state.rulings },
     leads,
+    relics: RELIC_IDS.filter((r) => relicKnown(state, RELICS[r])).map((id) => ({ id, taken: state.relics[id] ?? null })),
     evidence: observe(state.truth, state.evidence, state.probes),
     eliminated: state.eliminated,
     board: { ...state.board },

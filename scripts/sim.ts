@@ -148,6 +148,12 @@ function runGuided(p: Policy, truth: (typeof TRUTH_IDS)[number]): GameState {
         else action = { type: 'investigate', mode: p.evidence, body };
         break;
       }
+      case 'relic':
+        action = { type: 'salvage', mode: p.evidence, relic: next.relic };
+        break;
+      case 'detour':
+        action = { type: 'depart', to: next.to };
+        break;
       case 'probe':
         action = next.short > 0 ? harvest : p.probe ? { type: 'probe' } : null;
         break;

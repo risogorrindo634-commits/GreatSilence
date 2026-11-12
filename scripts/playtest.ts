@@ -11,6 +11,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { COURT, COURT_IDS } from '../src/content/court';
+import { RELICS } from '../src/content/relics';
 import { findBody, SYSTEMS } from '../src/content/systems';
 import { RESPONSES, TRUTHS, TRUTH_IDS } from '../src/content/truths';
 import type { TruthId } from '../src/content/truths';
@@ -31,6 +32,7 @@ const ACTION_NAMES: Record<Action['type'], string> = {
   view: '看风景',
   name: '命名',
   investigate: '调查',
+  salvage: '取遗物',
   tune: '调谐',
   harvest: '采集',
   build: '建阵列',
@@ -52,6 +54,7 @@ function describe(action: Action): string {
   if ('mode' in action) parts.push(action.mode === 'self' ? '亲自' : 'AI');
   if ('body' in action) parts.push(findBody(action.body)?.body.name ?? action.body);
   if (action.type === 'depart') parts.push(`去${SYSTEMS[action.to].name}`);
+  if (action.type === 'salvage') parts.push(RELICS[action.relic].title);
   if (action.type === 'rule') parts.push(`${COURT[action.item].title}：${action.decision === 'sign' ? '签' : '否'}`);
   if (action.type === 'wait') parts.push(`${action.years} 年`);
   if (action.type === 'mark') parts.push(`${EVIDENCE_NAMES[action.evidence]}→${TRUTHS[action.truth].name}：${MARK_NAMES[action.mark]}`);

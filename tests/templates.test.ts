@@ -20,7 +20,7 @@ describe('文书模板', () => {
   it('每一种日志事件都写得出一句完整的话', () => {
     const all = logs();
     const kinds = new Set(all.map((e) => e.t));
-    for (const kind of ['start', 'arrive', 'radiation', 'view', 'name', 'lead', 'investigate', 'tune', 'harvest', 'build', 'slingshot', 'probe', 'probeReport', 'wait', 'court', 'rule', 'level', 'conclude', 'end']) {
+    for (const kind of ['start', 'arrive', 'radiation', 'view', 'name', 'lead', 'salvage', 'investigate', 'tune', 'harvest', 'build', 'slingshot', 'probe', 'probeReport', 'wait', 'court', 'rule', 'level', 'conclude', 'end']) {
       expect(kinds.has(kind as LogEntry['t']), kind).toBe(true);
     }
     for (const entry of all) {

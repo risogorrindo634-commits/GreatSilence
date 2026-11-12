@@ -255,6 +255,13 @@ export function drawMap(canvas: HTMLCanvasElement, view: PublicView, selected: s
       ctx.arc(x, y, 12, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // 遗物：青色圆点。
+    if (sys.relic) {
+      ctx.fillStyle = CYAN;
+      ctx.beginPath();
+      ctx.arc(x - 12, y - 10, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // 线索：实心是还没去，空心是还能看得更细。
     if (sys.lead === 'open') {
       ctx.fillStyle = AMBER;

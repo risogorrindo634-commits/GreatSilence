@@ -66,7 +66,11 @@ function load(): SaveFile | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const file = JSON.parse(raw) as SaveFile;
-    return file.state?.version === 3 && Array.isArray(file.actions) ? file : null;
+    if (!Array.isArray(file.actions)) return null;
+    // 第 3 版只是少了遗物：补上就能接着玩。
+    const old = file.state as unknown as { version: number; relics?: GameState['relics'] };
+    if (old?.version === 3) file.state = { ...(file.state as GameState), version: 4, relics: old.relics ?? {} };
+    return file.state?.version === 4 ? file : null;
   } catch {
     return null;
   }

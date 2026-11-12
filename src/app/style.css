@@ -881,3 +881,11 @@ ul.leads li p {
   font-size: 12px;
   color: var(--dim);
 }
+
+.row.relic h4 {
+  color: var(--ai);
+}
+
+.row.relic.done h4 {
+  color: var(--dim);
+}
