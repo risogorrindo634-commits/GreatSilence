@@ -22,6 +22,7 @@ import {
   num,
   speedLabel,
 } from './labels';
+import { AGAIN_NAMES, recordSummary } from './record';
 import type { Scribe } from './scribe';
 import type { Store } from './store';
 
@@ -448,7 +449,12 @@ export function recordScreen(ctx: Ctx): string {
   return `
     <section class="card"><h3>相册<small>${view.album.length} 处</small></h3>${album}</section>
     <section class="card"><h3>航行日志</h3><ol class="log">${log}</ol></section>
-    <section class="card"><h3>这一局</h3><div class="pair">${ui('放弃这一局，重新开始', 'restart')}</div></section>`;
+    <section class="card">
+      <h3>这一局</h3>
+      <p>试玩时不想再玩下去了，先复制对局记录发给组织试玩的人，说一句为什么停下。</p>
+      <div class="pair">${ui('复制到目前为止的对局记录', 'copy')}${ui('放弃这一局，重新开始', 'restart')}</div>
+      <textarea class="mono record-text" readonly hidden></textarea>
+    </section>`;
 }
 
 // ---------------------------------------------------------------- 结局
@@ -489,18 +495,7 @@ export function endingScreen(ctx: Ctx): string {
     .join('');
 
   const record = ctx.store.record();
-  const summary = [
-    `种子 ${record.seed}`,
-    `真相 ${truth.name}`,
-    `结论 ${end.conclusion ? TRUTHS[end.conclusion].name : '无'}`,
-    `回应 ${end.response ? RESPONSES[end.response].name : '无'}`,
-    `结局 ${ENDING_NAMES[end.id]}`,
-    `第 ${end.year} 年`,
-    `命运 ${num(end.fate.total)}`,
-    `权威 ${num(view.authority)}`,
-    `清醒日 ${view.wakeDays}`,
-    `操作 ${record.actions.length} 步`,
-  ].join(' · ');
+  const answers = ctx.store.answers();
 
   return `
     <section class="card ending ${end.id}">
@@ -522,9 +517,18 @@ export function endingScreen(ctx: Ctx): string {
     </section>
     <section class="card"><h3>三件需要签字的事</h3><ul class="plain">${court}</ul></section>
     <section class="card"><h3>这种真相留下的证据</h3><ul class="plain">${evidence}</ul></section>
+    <section class="card survey">
+      <h3>三个问题<small>答案会放进对局记录</small></h3>
+      <p>还想再玩一局吗？</p>
+      <div class="chips">${(['yes', 'maybe', 'no'] as const).map((k) => `<button data-ui="again" data-arg="${k}" class="${answers.again === k ? 'on' : ''}">${AGAIN_NAMES[k]}</button>`).join('')}</div>
+      <label class="field">哪里觉得不讲道理？<textarea data-answer="unfair" rows="3" maxlength="2000" placeholder="没有就空着">${escapeHtml(answers.unfair)}</textarea></label>
+      <label class="field">${end.conclusion ? '你是怎么推出结论的？' : '如果现在让你下结论，你会选哪一种？为什么？'}<textarea data-answer="reasoning" rows="4" maxlength="2000">${escapeHtml(answers.reasoning)}</textarea></label>
+    </section>
     <section class="card">
       <h3>对局记录</h3>
-      <p class="mono" id="summary">${summary}</p>
-      <div class="pair">${ui('复制对局记录', 'copy')}${ui('再来一局', 'restart')}</div>
+      <p>答完上面的问题，把对局记录发给组织试玩的人。复制或者存成文件都行。</p>
+      <p class="mono">${escapeHtml(recordSummary(view, record))}</p>
+      <div class="pair">${ui('复制对局记录', 'copy')}${ui('存成文件', 'download')}${ui('再来一局', 'restart')}</div>
+      <textarea class="mono record-text" readonly hidden></textarea>
     </section>`;
 }

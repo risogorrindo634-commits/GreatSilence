@@ -10,6 +10,8 @@ import { drawCruise, drawFateCurve, drawInfrared, drawMap, drawProbes, drawRuins
 import type { Hit } from './draw';
 import { EVIDENCE_NAMES, escapeHtml, num } from './labels';
 import { playIgnition, playSlingshot, playTuning } from './minigames';
+import { recordText } from './record';
+import type { Again } from './record';
 import { boardScreen, courtScreen, endingScreen, header, mapScreen, recordScreen, researchScreen, systemScreen, tabs } from './screens';
 import type { Ctx, Tab, UiState } from './screens';
 import type { Scribe } from './scribe';
@@ -301,11 +303,41 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
         render();
         break;
       case 'copy': {
-        const summary = root.querySelector('#summary')?.textContent ?? '';
-        void navigator.clipboard?.writeText(`${summary}\n${JSON.stringify(store.record())}`);
-        control.textContent = '已复制';
+        const text = recordText(store.view(), store.record());
+        // 复制不了（不是 https、浏览器不许）就把文字摆出来，让人自己全选复制。
+        const fallback = (): void => {
+          const box = control.closest('.card')?.querySelector<HTMLTextAreaElement>('.record-text');
+          if (!box) return;
+          box.value = text;
+          box.hidden = false;
+          box.select();
+          control.textContent = '复制不了，请全选下面的文字';
+        };
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(() => (control.textContent = '已复制'), fallback);
+        } else {
+          fallback();
+        }
         break;
       }
+      case 'download': {
+        const record = store.record();
+        const url = URL.createObjectURL(new Blob([recordText(store.view(), record)], { type: 'text/plain;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `great-silence-record-${record.seed}.txt`;
+        link.hidden = true;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        control.textContent = '已存';
+        break;
+      }
+      case 'again':
+        store.answer({ again: arg as Again });
+        render();
+        break;
       case 'restart':
         void confirm(store.view().ending ? '开始新的一局。' : '放弃这一局，重新开始。进度不会保留。').then((ok) => {
           if (!ok) return;
@@ -323,6 +355,11 @@ export function startApp(root: HTMLElement, store: Store, scribe: Scribe): void 
   // 科研的份额：松手时才提交，拖动时只更新旁边的数字。
   root.addEventListener('input', (e) => {
     const input = e.target as HTMLInputElement;
+    const key = input.dataset.answer;
+    if (key === 'unfair' || key === 'reasoning') {
+      store.answer({ [key]: input.value });
+      return;
+    }
     if (!input.dataset.share) return;
     const out = input.closest('label')?.querySelector('output');
     if (out) out.textContent = `${num(Number(input.value))}%`;

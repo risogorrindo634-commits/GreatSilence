@@ -26,6 +26,7 @@ ai        文书的措辞：模板，之后接入模型
 
 - `app` 也不引用 `ai`。它只定义一个文书接口（`app/scribe.ts`），`ai` 实现它，由入口 `main.ts` 注入。以后把模板换成模型，只改入口。
 - 完整的状态关在 `app/store.ts` 里，界面的其余部分只拿得到视图。文书的函数也只接收视图。
+- `app/store.ts` 也替试玩记下用时和结局后三个问题的答案，和种子、操作序列一起组成对局记录（`app/record.ts`）。这些不进内核，不影响重放。结局之前复制出来的记录不带真相。
 - 这是一个纯静态站点，真相必然在浏览器的内存和存档里。这里防的是界面无意中泄密，不防玩家翻存档。
 
 ## 3. 内核的接口
@@ -72,13 +73,13 @@ publicView(state) -> PublicView         // 给界面用，不含真相
 
 ```
 src/
-  content/   balance.ts  truths.ts  systems.ts  court.ts
+  content/   balance.ts  truths.ts  systems.ts  court.ts  augments.ts
   core/      types.ts  rng.ts  evidence.ts  game.ts
-  app/       store.ts  app.ts  screens.ts  draw.ts  minigames.ts  scribe.ts  labels.ts  style.css
+  app/       store.ts  record.ts  app.ts  screens.ts  draw.ts  minigames.ts  scribe.ts  labels.ts  style.css
   ai/        templates.ts
   main.ts
-tests/       core.test.ts  templates.test.ts  helpers.ts
-scripts/     sim.ts
+tests/       core.test.ts  templates.test.ts  record.test.ts  helpers.ts
+scripts/     sim.ts  playtest.ts  text.ts
 docs/
 ```
 

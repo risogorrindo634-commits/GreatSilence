@@ -774,3 +774,40 @@ table.board {
     height: 380px;
   }
 }
+
+/* ---------------------------------------------------------------- 试玩的问题与记录 */
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.field textarea,
+textarea.record-text {
+  width: 100%;
+  padding: 8px 10px;
+  background: #101720;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--bright);
+  font: inherit;
+  resize: vertical;
+}
+
+textarea.record-text {
+  min-height: 120px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+textarea.record-text[hidden] {
+  display: none;
+}
+
+.survey .chips button {
+  min-width: 64px;
+}

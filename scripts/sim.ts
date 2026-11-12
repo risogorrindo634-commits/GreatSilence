@@ -11,6 +11,7 @@ import type { SystemId } from '../src/content/systems';
 import { TRUTHS, TRUTH_IDS } from '../src/content/truths';
 import { can, createGame, fate, fateParts, incomePerYear, level, reduce } from '../src/core/game';
 import type { Action, GameState, Mode } from '../src/core/types';
+import { pad } from './text';
 
 interface Policy {
   name: string;
@@ -131,12 +132,6 @@ const ENDING_NAMES: Record<string, string> = {
   failed: '失察',
   undecided: '未决',
   sleep: '长眠',
-};
-
-const pad = (text: string, width: number): string => {
-  let w = 0;
-  for (const ch of text) w += ch.charCodeAt(0) > 255 ? 2 : 1;
-  return text + ' '.repeat(Math.max(0, width - w));
 };
 
 console.log(
